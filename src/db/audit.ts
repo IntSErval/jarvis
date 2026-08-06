@@ -37,10 +37,18 @@ export interface AuditStore {
 
 /** Normalize a raw audit input into a complete row (defaults + timestamp). */
 export function buildAuditRow(
-  _input: AuditInput,
-  _now: () => Date = () => new Date(),
+  input: AuditInput,
+  now: () => Date = () => new Date(),
 ): AuditRow {
-  throw new Error("not implemented");
+  return {
+    ts: now().toISOString(),
+    channel: input.channel,
+    user_msg: input.user_msg,
+    tool_calls: input.tool_calls ?? [],
+    response: input.response,
+    status: input.status ?? "ok",
+    error: input.error ?? null,
+  };
 }
 
 /** Returns a logAudit(input) bound to a store — this is the orchestrator's dep. */

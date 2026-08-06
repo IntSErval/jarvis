@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAuditRow } from "./audit.js";
+import { buildAuditRow, makeAuditLogger, type AuditRow, type AuditStore } from "./audit.js";
 
 describe("buildAuditRow", () => {
   it("stamps an ISO-8601 timestamp and applies defaults", () => {
@@ -30,5 +30,22 @@ describe("buildAuditRow", () => {
     expect(row.error).toBe("calendar down");
     expect(row.tool_calls).toHaveLength(1);
     expect(row.tool_calls[0]).toMatchObject({ name: "list_events" });
+  });
+
+  it("makeAuditLogger inserts a normalized row into the store", async () => {
+    const inserted: AuditRow[] = [];
+    const store: AuditStore = {
+      insert: async (row) => {
+        inserted.push(row);
+      },
+      recent: async () => [],
+    };
+    const fixed = new Date("2026-08-06T09:30:00.000Z");
+    const logAudit = makeAuditLogger(store, () => fixed);
+
+    await logAudit({ channel: "web", user_msg: "hi", response: "hello" });
+
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({ ts: "2026-08-06T09:30:00.000Z", status: "ok", channel: "web" });
   });
 });

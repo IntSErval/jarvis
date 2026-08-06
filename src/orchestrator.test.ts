@@ -88,7 +88,7 @@ describe("runOrchestrator", () => {
     expect(out).toMatch(/sorry|couldn't|error/i);
     expect(audits[0]!.status).toBe("error");
     expect(audits[0]!.error).toContain("calendar down");
-    expect(audits[0]!.tool_calls[0]).toMatchObject({
+    expect(audits[0]!.tool_calls![0]).toMatchObject({
       name: "list_events",
       error: expect.stringContaining("calendar down"),
     });
@@ -109,6 +109,22 @@ describe("runOrchestrator", () => {
     expect(audits[0]!.status).toBe("error");
     expect(audits[0]!.error).toMatch(/unknown|unpermitted|tool/i);
     expect(out).toMatch(/sorry|couldn't|error/i);
+  });
+
+  it("catches a model failure, logs status=error, and returns a graceful message", async () => {
+    const { audits, deps } = harness({
+      model: {
+        turn: async () => {
+          throw new Error("model gateway timeout");
+        },
+      },
+    });
+
+    const out = await runOrchestrator({ text: "hi", channel: "web" }, deps);
+
+    expect(out).toMatch(/sorry|couldn't|error/i);
+    expect(audits[0]!.status).toBe("error");
+    expect(audits[0]!.error).toContain("model gateway timeout");
   });
 
   it("stops at the max-hop limit instead of looping forever", async () => {

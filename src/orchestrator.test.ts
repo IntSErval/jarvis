@@ -7,6 +7,7 @@ import {
   type OrchestratorDeps,
 } from "./orchestrator.js";
 import type { AuditInput } from "./db/audit.js";
+import { allowlistGate } from "./gate.js";
 
 /** Model that replays a scripted sequence of turns, repeating the last one. */
 function scriptedModel(turns: ModelTurn[]): ModelClient {
@@ -108,6 +109,26 @@ describe("runOrchestrator", () => {
     expect(listEvents).not.toHaveBeenCalled();
     expect(audits[0]!.status).toBe("error");
     expect(audits[0]!.error).toMatch(/unknown|unpermitted|tool/i);
+    expect(out).toMatch(/sorry|couldn't|error/i);
+  });
+
+  it("refuses a known tool denied by an injected gate, without calling the calendar", async () => {
+    const listEvents = vi.fn(async () => []);
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "t1", name: "list_events", args: {} }], text: "" },
+      ]),
+      calendar: { listEvents, getEvent: async () => ({}) },
+      // Policy tighter than the default: allows nothing.
+      gate: allowlistGate([]),
+    });
+
+    const out = await runOrchestrator({ text: "list my events", channel: "web" }, deps);
+
+    expect(listEvents).not.toHaveBeenCalled();
+    expect(audits[0]!.status).toBe("error");
+    expect(audits[0]!.error).toMatch(/permit/i);
+    expect(audits[0]!.tool_calls![0]).toMatchObject({ name: "list_events" });
     expect(out).toMatch(/sorry|couldn't|error/i);
   });
 

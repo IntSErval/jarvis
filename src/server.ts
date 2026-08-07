@@ -10,6 +10,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { runOrchestrator, type CalendarClient, type ModelClient } from "./orchestrator.js";
 import { makeAuditLogger } from "./db/audit.js";
 import { fileAuditStore } from "./store/fileAudit.js";
+import { dashboardPage } from "./dashboard.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const AUDIT_FILE = process.env.AUDIT_FILE ?? "audit.json";
@@ -49,6 +50,11 @@ function readBody(req: IncomingMessage): Promise<string> {
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+
+    if (req.method === "GET" && url.pathname === "/") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end(dashboardPage());
+    }
 
     if (req.method === "POST" && url.pathname === "/message") {
       const { text, channel = "web" } = JSON.parse((await readBody(req)) || "{}");

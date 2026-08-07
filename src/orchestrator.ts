@@ -3,6 +3,7 @@
 // unit-testable without live model/calendar/db.
 
 import type { AuditInput, ToolCallRecord } from "./db/audit.js";
+import { allowlistGate, type Gate } from "./gate.js";
 
 export interface OrchestratorInput {
   text: string;
@@ -48,6 +49,9 @@ export interface OrchestratorDeps {
   logAudit: (input: AuditInput) => Promise<void>;
   /** Max model<->tool round trips before bailing (PRD 8 max-hop guard). */
   maxHops?: number;
+  /** Permission gate consulted before every tool call. Defaults to an
+   *  allowlist of the read-only calendar tools (least privilege). */
+  gate?: Gate;
 }
 
 export const CALENDAR_TOOLS: ToolSpec[] = [
@@ -73,7 +77,7 @@ export async function runOrchestrator(
   input: OrchestratorInput,
   deps: OrchestratorDeps,
 ): Promise<string> {
-  const { model, calendar, logAudit, maxHops = 4 } = deps;
+  const { model, calendar, logAudit, maxHops = 4, gate = allowlistGate(CALENDAR_TOOLS.map((t) => t.name)) } = deps;
   const messages: Message[] = [{ role: "user", content: input.text }];
   const toolCalls: ToolCallRecord[] = [];
 
@@ -90,6 +94,12 @@ export async function runOrchestrator(
       }
 
       for (const call of turn.toolCalls) {
+        const decision = gate.check({ name: call.name, args: call.args });
+        if (!decision.allow) {
+          const reason = decision.reason ?? `tool not permitted: ${call.name}`;
+          toolCalls.push({ name: call.name, args: call.args, error: reason });
+          return await finish(GRACEFUL, "error", reason);
+        }
         try {
           const result = await dispatchTool(calendar, call.name, call.args);
           toolCalls.push({ name: call.name, args: call.args, result });

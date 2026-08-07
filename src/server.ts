@@ -8,15 +8,18 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { runOrchestrator, type CalendarClient, type ModelClient } from "./orchestrator.js";
+import type { AuditStore } from "./db/audit.js";
 import { makeAuditLogger } from "./db/audit.js";
 import { fileAuditStore } from "./store/fileAudit.js";
+import { supabaseAuditStore } from "./store/supabaseAudit.js";
+import { anthropicModel } from "./model/anthropic.js";
 import { dashboardPage } from "./dashboard.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const AUDIT_FILE = process.env.AUDIT_FILE ?? "audit.json";
 
-// ponytail: canned model — proves the loop end-to-end with no API key. Replace
-// with an @anthropic-ai/sdk-backed ModelClient when ANTHROPIC_API_KEY exists.
+// ponytail: canned model fallback — proves the loop with no API key. Used only
+// when ANTHROPIC_API_KEY is absent.
 const stubModel: ModelClient = {
   turn: async (messages) => ({
     toolCalls: [],
@@ -24,14 +27,29 @@ const stubModel: ModelClient = {
   }),
 };
 
-// ponytail: empty read-only calendar until the real Google client is wired.
+// ponytail: empty read-only calendar until the real Google client is wired
+// (blocked on a valid GOOGLE_OAUTH_REFRESH_TOKEN).
 const stubCalendar: CalendarClient = {
   listEvents: async () => [],
   getEvent: async () => ({}),
 };
 
-const store = fileAuditStore(AUDIT_FILE);
+// Real adapters when creds exist, free local fallbacks otherwise — same ports.
+const model: ModelClient = process.env.ANTHROPIC_API_KEY
+  ? anthropicModel(process.env.ANTHROPIC_API_KEY, process.env.MODEL ? { model: process.env.MODEL } : {})
+  : stubModel;
+
+const store: AuditStore =
+  process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY
+    ? supabaseAuditStore(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
+    : fileAuditStore(AUDIT_FILE);
+
 const logAudit = makeAuditLogger(store);
+
+console.log(
+  `jarvis: model=${process.env.ANTHROPIC_API_KEY ? "anthropic" : "stub"} ` +
+    `store=${process.env.SUPABASE_URL ? "supabase" : "file"} calendar=stub`,
+);
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -61,7 +79,7 @@ const server = createServer(async (req, res) => {
       if (typeof text !== "string" || text.length === 0) {
         return send(res, 400, { error: "body must include a non-empty 'text' string" });
       }
-      const reply = await runOrchestrator({ text, channel }, { model: stubModel, calendar: stubCalendar, logAudit });
+      const reply = await runOrchestrator({ text, channel }, { model, calendar: stubCalendar, logAudit });
       return send(res, 200, { reply });
     }
 

@@ -3,7 +3,9 @@ import { anthropicModel } from "./anthropic.js";
 import { CALENDAR_TOOLS, type Message } from "../orchestrator.js";
 
 function reply(body: unknown) {
-  return vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+  return vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+    new Response(JSON.stringify(body), { status: 200 }),
+  );
 }
 
 const userMsg: Message[] = [{ role: "user", content: "hello" }];

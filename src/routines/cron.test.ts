@@ -47,4 +47,10 @@ describe("cronMatches", () => {
       "cron: invalid expression: bad * * * *",
     );
   });
+
+  it("throws on out-of-range field values", () => {
+    for (const expr of ["99 * * * *", "0 25 * * *", "0 0 32 * *", "0 0 * 13 *", "0 0 * * 8"]) {
+      expect(() => cronMatches(expr, new Date())).toThrow("cron: invalid expression");
+    }
+  });
 });

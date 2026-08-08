@@ -62,6 +62,15 @@ describe("runDueRoutines", () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  it("isolates a routine whose schedule throws and still runs siblings", async () => {
+    const bad = { id: "bad", schedule: "not a cron", prompt: "boom" } as Routine;
+    const good: Routine = { id: "good", schedule: "30 8 * * *", prompt: "fine" };
+    const run = vi.fn(async (prompt: string) => prompt);
+    await expect(runDueRoutines([bad, good], AT, run)).resolves.toBeUndefined();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledWith("fine", "routine:good");
+  });
+
   it("continues running other routines when one deliver rejects", async () => {
     const a: Routine = { id: "a", schedule: "30 8 * * *", prompt: "a" };
     const b: Routine = { id: "b", schedule: "30 8 * * *", prompt: "b" };

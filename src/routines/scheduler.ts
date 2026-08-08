@@ -14,11 +14,14 @@ export async function runDueRoutines(
   run: (prompt: string, channel: string) => Promise<string>,
   deliver?: (routine: Routine, reply: string) => Promise<void>,
 ): Promise<void> {
-  for (const routine of dueRoutines(routines, at)) {
+  for (const routine of routines) {
     // ponytail: swallow-and-continue — a personal single-user scheduler
-    // shouldn't die because one routine failed.
+    // shouldn't die because one routine failed. The due-check lives INSIDE the
+    // try so a throwing schedule (bad cron expr) is isolated like a failing run,
+    // never rejecting the batch (server.ts void-s this with no .catch).
     try {
-      const channel = routine.channel ?? "routine:" + routine.id;
+      if (!cronMatches(routine.schedule, at)) continue;
+      const channel = routine.channel ?? `routine:${routine.id}`;
       const reply = await run(routine.prompt, channel);
       if (deliver) await deliver(routine, reply);
     } catch {

@@ -131,6 +131,10 @@ const orchestratorDeps = {
 // all (deny-by-default, $0 with no creds).
 // ponytail: one in-process 60s tick, no job queue — fine for a single user.
 if (process.env.ROUTINES_FILE) {
+  // ponytail: routines loaded once at boot — editing routines.json needs a
+  // restart to take effect. Re-read per tick if hot-reload ever matters.
+  // ponytail: a malformed routines.json throws here and aborts startup — that's
+  // intentional fail-fast; better a loud boot failure than a silently dead scheduler.
   const routines = await loadRoutines(process.env.ROUTINES_FILE);
   const timer = setInterval(() => {
     void runDueRoutines(routines, new Date(), (prompt, channel) =>

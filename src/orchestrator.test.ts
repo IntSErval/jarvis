@@ -70,6 +70,41 @@ describe("runOrchestrator", () => {
     ]);
   });
 
+  it("runs a github tool call when a github client is provided, and records it", async () => {
+    const issues = [{ number: 7, title: "bug" }];
+    const listIssues = vi.fn(async () => issues);
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "g1", name: "list_issues", args: { state: "open" } }], text: "" },
+        { toolCalls: [], text: "You have 1 open issue." },
+      ]),
+      github: { listIssues, getIssue: async () => ({}), getFile: async () => ({}) },
+    });
+
+    const out = await runOrchestrator({ text: "any open issues?", channel: "web" }, deps);
+
+    expect(listIssues).toHaveBeenCalledWith({ state: "open" });
+    expect(out).toBe("You have 1 open issue.");
+    expect(audits[0]!.status).toBe("ok");
+    expect(audits[0]!.tool_calls).toEqual([
+      { name: "list_issues", args: { state: "open" }, result: issues },
+    ]);
+  });
+
+  it("refuses github tools when no github client is wired (deny-by-default)", async () => {
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "g1", name: "list_issues", args: {} }], text: "" },
+      ]),
+    });
+
+    const out = await runOrchestrator({ text: "issues?", channel: "web" }, deps);
+
+    expect(audits[0]!.status).toBe("error");
+    expect(audits[0]!.error).toMatch(/permit|unknown|tool/i);
+    expect(out).toMatch(/sorry|couldn't|error/i);
+  });
+
   it("catches a tool failure, logs status=error, and returns a graceful message", async () => {
     const { audits, deps } = harness({
       model: scriptedModel([

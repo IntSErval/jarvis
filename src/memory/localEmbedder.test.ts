@@ -34,4 +34,12 @@ describe("localEmbedder", () => {
     const norm = Math.sqrt(v.reduce((sum, x) => sum + x * x, 0));
     expect(norm).toBeCloseTo(1, 6);
   });
+
+  it("keeps distinct short inputs separable (not near-collinear)", async () => {
+    const e = localEmbedder();
+    const a = await e.embed("hello world");
+    const b = await e.embed("goodbye world");
+    const cos = a.reduce((s, x, i) => s + x * (b[i] ?? 0), 0);
+    expect(cos).toBeLessThan(0.9);
+  });
 });

@@ -83,6 +83,7 @@ export const GMAIL_TOOLS: ToolSpec[] = [
 ];
 
 export const NOTION_TOOLS: ToolSpec[] = [
+  // notion_search is deliberately prefixed to avoid colliding with any future generic `search` tool.
   { name: "notion_search", description: "Search Notion pages and databases (read-only)." },
   { name: "get_page", description: "Get one Notion page by id (read-only)." },
   { name: "get_block_children", description: "List the child blocks of a Notion block or page (read-only)." },

@@ -74,12 +74,12 @@ export function notionClient(config: Config): NotionClient {
     getPage: async (args: unknown) => {
       const { page_id, ...query } = (args ?? {}) as { page_id?: string; [k: string]: unknown };
       if (!page_id) throw new Error("notion getPage: page_id is required");
-      return get(`/pages/${page_id}`, query);
+      return get(`/pages/${encodeURIComponent(page_id)}`, query);
     },
     getBlockChildren: async (args: unknown) => {
       const { block_id, ...query } = (args ?? {}) as { block_id?: string; [k: string]: unknown };
       if (!block_id) throw new Error("notion getBlockChildren: block_id is required");
-      return get(`/blocks/${block_id}/children`, query);
+      return get(`/blocks/${encodeURIComponent(block_id)}/children`, query);
     },
   };
 }

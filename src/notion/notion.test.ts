@@ -46,7 +46,17 @@ describe("notionClient", () => {
     const headers = init!.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer secret_test");
     expect(headers["Notion-Version"]).toBe("2022-06-28");
+    expect(headers["Content-Type"]).toBeUndefined(); // GET carries no body, locks in the POST/GET header split
     expect(out).toEqual({ id: "p1", object: "page" });
+  });
+
+  it("getPage URL-encodes the page_id", async () => {
+    const fetchFn = router({ body: {} });
+    await notionClient({ ...CONFIG, fetchFn }).getPage({ page_id: "a b/c" });
+
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(String(url)).toContain("/pages/a%20b%2Fc");
+    expect(String(url)).not.toContain("/pages/a b/c");
   });
 
   it("getBlockChildren GETs /blocks/{block_id}/children, with remaining scalar args as query", async () => {

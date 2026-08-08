@@ -13,6 +13,7 @@ import { makeAuditLogger } from "./db/audit.js";
 import { fileAuditStore } from "./store/fileAudit.js";
 import { supabaseAuditStore } from "./store/supabaseAudit.js";
 import { anthropicModel } from "./model/anthropic.js";
+import { googleCalendar } from "./calendar/google.js";
 import { dashboardPage } from "./dashboard.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -46,9 +47,21 @@ const store: AuditStore =
 
 const logAudit = makeAuditLogger(store);
 
+const { GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN } = process.env;
+const calendar: CalendarClient =
+  GOOGLE_OAUTH_CLIENT_ID && GOOGLE_OAUTH_CLIENT_SECRET && GOOGLE_OAUTH_REFRESH_TOKEN
+    ? googleCalendar({
+        clientId: GOOGLE_OAUTH_CLIENT_ID,
+        clientSecret: GOOGLE_OAUTH_CLIENT_SECRET,
+        refreshToken: GOOGLE_OAUTH_REFRESH_TOKEN,
+        ...(process.env.GOOGLE_CALENDAR_ID ? { calendarId: process.env.GOOGLE_CALENDAR_ID } : {}),
+      })
+    : stubCalendar;
+
 console.log(
   `jarvis: model=${process.env.ANTHROPIC_API_KEY ? "anthropic" : "stub"} ` +
-    `store=${process.env.SUPABASE_URL ? "supabase" : "file"} calendar=stub`,
+    `store=${process.env.SUPABASE_URL ? "supabase" : "file"} ` +
+    `calendar=${GOOGLE_OAUTH_REFRESH_TOKEN ? "google" : "stub"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -79,7 +92,7 @@ const server = createServer(async (req, res) => {
       if (typeof text !== "string" || text.length === 0) {
         return send(res, 400, { error: "body must include a non-empty 'text' string" });
       }
-      const reply = await runOrchestrator({ text, channel }, { model, calendar: stubCalendar, logAudit });
+      const reply = await runOrchestrator({ text, channel }, { model, calendar, logAudit });
       return send(res, 200, { reply });
     }
 

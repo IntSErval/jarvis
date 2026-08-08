@@ -175,6 +175,41 @@ describe("runOrchestrator", () => {
     expect(out).toMatch(/sorry|couldn't|error/i);
   });
 
+  it("runs a memory_search tool call when a memory store is provided, and records it", async () => {
+    const hits = [{ content: "we chose recall-as-a-tool", metadata: {}, similarity: 0.91 }];
+    const recall = vi.fn(async () => hits);
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "s1", name: "memory_search", args: { query: "rag decision", k: 5 } }], text: "" },
+        { toolCalls: [], text: "We chose recall-as-a-tool." },
+      ]),
+      memory: { recall, remember: async () => {} },
+    });
+
+    const out = await runOrchestrator({ text: "what did we decide about rag?", channel: "web" }, deps);
+
+    expect(recall).toHaveBeenCalledWith("rag decision", 5);
+    expect(out).toBe("We chose recall-as-a-tool.");
+    expect(audits[0]!.status).toBe("ok");
+    expect(audits[0]!.tool_calls).toEqual([
+      { name: "memory_search", args: { query: "rag decision", k: 5 }, result: hits },
+    ]);
+  });
+
+  it("refuses memory_search when no memory store is wired (deny-by-default)", async () => {
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "s1", name: "memory_search", args: { query: "anything" } }], text: "" },
+      ]),
+    });
+
+    const out = await runOrchestrator({ text: "recall something", channel: "web" }, deps);
+
+    expect(audits[0]!.status).toBe("error");
+    expect(audits[0]!.error).toMatch(/permit|unknown|tool/i);
+    expect(out).toMatch(/sorry|couldn't|error/i);
+  });
+
   it("catches a tool failure, logs status=error, and returns a graceful message", async () => {
     const { audits, deps } = harness({
       model: scriptedModel([

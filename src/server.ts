@@ -14,6 +14,7 @@ import { fileAuditStore } from "./store/fileAudit.js";
 import { supabaseAuditStore } from "./store/supabaseAudit.js";
 import { anthropicModel } from "./model/anthropic.js";
 import { googleCalendar } from "./calendar/google.js";
+import { githubClient, type GithubClient } from "./github/github.js";
 import { dashboardPage } from "./dashboard.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -58,10 +59,22 @@ const calendar: CalendarClient =
       })
     : stubCalendar;
 
+// Read-only GitHub: active only when a token is present. Absent => the
+// orchestrator omits GitHub tools entirely (deny-by-default), $0 with no creds.
+const { GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO } = process.env;
+const github: GithubClient | undefined = GITHUB_TOKEN
+  ? githubClient({
+      token: GITHUB_TOKEN,
+      ...(GITHUB_OWNER ? { owner: GITHUB_OWNER } : {}),
+      ...(GITHUB_REPO ? { repo: GITHUB_REPO } : {}),
+    })
+  : undefined;
+
 console.log(
   `jarvis: model=${process.env.ANTHROPIC_API_KEY ? "anthropic" : "stub"} ` +
     `store=${process.env.SUPABASE_URL ? "supabase" : "file"} ` +
-    `calendar=${GOOGLE_OAUTH_REFRESH_TOKEN ? "google" : "stub"}`,
+    `calendar=${GOOGLE_OAUTH_REFRESH_TOKEN ? "google" : "stub"} ` +
+    `github=${GITHUB_TOKEN ? "on" : "off"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -92,7 +105,10 @@ const server = createServer(async (req, res) => {
       if (typeof text !== "string" || text.length === 0) {
         return send(res, 400, { error: "body must include a non-empty 'text' string" });
       }
-      const reply = await runOrchestrator({ text, channel }, { model, calendar, logAudit });
+      const reply = await runOrchestrator(
+        { text, channel },
+        { model, calendar, logAudit, ...(github ? { github } : {}) },
+      );
       return send(res, 200, { reply });
     }
 

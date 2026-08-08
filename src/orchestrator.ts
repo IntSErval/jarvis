@@ -5,6 +5,7 @@
 import type { AuditInput, ToolCallRecord } from "./db/audit.js";
 import { allowlistGate, type Gate } from "./gate.js";
 import type { GithubClient } from "./github/github.js";
+import type { GmailClient } from "./mail/gmail.js";
 
 export interface OrchestratorInput {
   text: string;
@@ -50,6 +51,9 @@ export interface OrchestratorDeps {
   /** Optional read-only GitHub surface. When present, its tools are exposed to
    *  the model and permitted by the default gate; absent => deny-by-default. */
   github?: GithubClient;
+  /** Optional read-only Gmail surface. When present, its tools are exposed to
+   *  the model and permitted by the default gate; absent => deny-by-default. */
+  gmail?: GmailClient;
   logAudit: (input: AuditInput) => Promise<void>;
   /** Max model<->tool round trips before bailing (PRD 8 max-hop guard). */
   maxHops?: number;
@@ -69,6 +73,11 @@ export const GITHUB_TOOLS: ToolSpec[] = [
   { name: "get_file", description: "Read a file's contents from a GitHub repo (read-only)." },
 ];
 
+export const GMAIL_TOOLS: ToolSpec[] = [
+  { name: "list_messages", description: "List Gmail messages matching a query (read-only)." },
+  { name: "get_message", description: "Get one Gmail message by id (read-only)." },
+];
+
 const GRACEFUL = "Sorry, I couldn't complete that — I hit an error.";
 
 /** Build the tool name -> handler map from whichever read-only clients are wired.
@@ -84,6 +93,11 @@ function buildDispatch(deps: OrchestratorDeps): Map<string, (args: unknown) => P
     dispatch.set("get_issue", (a) => gh.getIssue(a));
     dispatch.set("get_file", (a) => gh.getFile(a));
   }
+  if (deps.gmail) {
+    const gmail = deps.gmail;
+    dispatch.set("list_messages", (a) => gmail.listMessages(a));
+    dispatch.set("get_message", (a) => gmail.getMessage(a));
+  }
   return dispatch;
 }
 
@@ -94,7 +108,11 @@ export async function runOrchestrator(
   const { model, logAudit, maxHops = 4 } = deps;
   const dispatch = buildDispatch(deps);
   // Only expose tools that are actually wired (least privilege).
-  const tools: ToolSpec[] = [...CALENDAR_TOOLS, ...(deps.github ? GITHUB_TOOLS : [])];
+  const tools: ToolSpec[] = [
+    ...CALENDAR_TOOLS,
+    ...(deps.github ? GITHUB_TOOLS : []),
+    ...(deps.gmail ? GMAIL_TOOLS : []),
+  ];
   const gate = deps.gate ?? allowlistGate([...dispatch.keys()]);
   const messages: Message[] = [{ role: "user", content: input.text }];
   const toolCalls: ToolCallRecord[] = [];

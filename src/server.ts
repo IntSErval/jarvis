@@ -15,6 +15,7 @@ import { supabaseAuditStore } from "./store/supabaseAudit.js";
 import { anthropicModel } from "./model/anthropic.js";
 import { googleCalendar } from "./calendar/google.js";
 import { githubClient, type GithubClient } from "./github/github.js";
+import { gmailClient, type GmailClient } from "./mail/gmail.js";
 import { dashboardPage } from "./dashboard.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -70,11 +71,25 @@ const github: GithubClient | undefined = GITHUB_TOKEN
     })
   : undefined;
 
+// Read-only Gmail: reuses the Google OAuth creds but needs the gmail.readonly
+// scope on the refresh token, so it's opt-in via GMAIL_ENABLED to avoid
+// surprising 403s when the existing calendar-scoped token lacks Gmail access.
+// Absent => the orchestrator omits Gmail tools entirely (deny-by-default).
+const gmail: GmailClient | undefined =
+  GOOGLE_OAUTH_CLIENT_ID && GOOGLE_OAUTH_CLIENT_SECRET && GOOGLE_OAUTH_REFRESH_TOKEN && process.env.GMAIL_ENABLED
+    ? gmailClient({
+        clientId: GOOGLE_OAUTH_CLIENT_ID,
+        clientSecret: GOOGLE_OAUTH_CLIENT_SECRET,
+        refreshToken: GOOGLE_OAUTH_REFRESH_TOKEN,
+      })
+    : undefined;
+
 console.log(
   `jarvis: model=${process.env.ANTHROPIC_API_KEY ? "anthropic" : "stub"} ` +
     `store=${process.env.SUPABASE_URL ? "supabase" : "file"} ` +
     `calendar=${GOOGLE_OAUTH_REFRESH_TOKEN ? "google" : "stub"} ` +
-    `github=${GITHUB_TOKEN ? "on" : "off"}`,
+    `github=${GITHUB_TOKEN ? "on" : "off"} ` +
+    `gmail=${gmail ? "on" : "off"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -107,7 +122,7 @@ const server = createServer(async (req, res) => {
       }
       const reply = await runOrchestrator(
         { text, channel },
-        { model, calendar, logAudit, ...(github ? { github } : {}) },
+        { model, calendar, logAudit, ...(github ? { github } : {}), ...(gmail ? { gmail } : {}) },
       );
       return send(res, 200, { reply });
     }

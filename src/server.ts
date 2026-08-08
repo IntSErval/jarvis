@@ -16,6 +16,7 @@ import { anthropicModel } from "./model/anthropic.js";
 import { googleCalendar } from "./calendar/google.js";
 import { githubClient, type GithubClient } from "./github/github.js";
 import { gmailClient, type GmailClient } from "./mail/gmail.js";
+import { notionClient, type NotionClient } from "./notion/notion.js";
 import { dashboardPage } from "./dashboard.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -84,12 +85,18 @@ const gmail: GmailClient | undefined =
       })
     : undefined;
 
+// Read-only Notion: active only when an integration token is present. Absent
+// => the orchestrator omits Notion tools entirely (deny-by-default).
+const { NOTION_TOKEN } = process.env;
+const notion: NotionClient | undefined = NOTION_TOKEN ? notionClient({ token: NOTION_TOKEN }) : undefined;
+
 console.log(
   `jarvis: model=${process.env.ANTHROPIC_API_KEY ? "anthropic" : "stub"} ` +
     `store=${process.env.SUPABASE_URL ? "supabase" : "file"} ` +
     `calendar=${GOOGLE_OAUTH_REFRESH_TOKEN ? "google" : "stub"} ` +
     `github=${GITHUB_TOKEN ? "on" : "off"} ` +
-    `gmail=${gmail ? "on" : "off"}`,
+    `gmail=${gmail ? "on" : "off"} ` +
+    `notion=${notion ? "on" : "off"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -122,7 +129,14 @@ const server = createServer(async (req, res) => {
       }
       const reply = await runOrchestrator(
         { text, channel },
-        { model, calendar, logAudit, ...(github ? { github } : {}), ...(gmail ? { gmail } : {}) },
+        {
+          model,
+          calendar,
+          logAudit,
+          ...(github ? { github } : {}),
+          ...(gmail ? { gmail } : {}),
+          ...(notion ? { notion } : {}),
+        },
       );
       return send(res, 200, { reply });
     }

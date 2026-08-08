@@ -6,6 +6,7 @@ import type { AuditInput, ToolCallRecord } from "./db/audit.js";
 import { allowlistGate, type Gate } from "./gate.js";
 import type { GithubClient } from "./github/github.js";
 import type { GmailClient } from "./mail/gmail.js";
+import type { NotionClient } from "./notion/notion.js";
 
 export interface OrchestratorInput {
   text: string;
@@ -54,6 +55,9 @@ export interface OrchestratorDeps {
   /** Optional read-only Gmail surface. When present, its tools are exposed to
    *  the model and permitted by the default gate; absent => deny-by-default. */
   gmail?: GmailClient;
+  /** Optional read-only Notion surface. When present, its tools are exposed to
+   *  the model and permitted by the default gate; absent => deny-by-default. */
+  notion?: NotionClient;
   logAudit: (input: AuditInput) => Promise<void>;
   /** Max model<->tool round trips before bailing (PRD 8 max-hop guard). */
   maxHops?: number;
@@ -78,6 +82,12 @@ export const GMAIL_TOOLS: ToolSpec[] = [
   { name: "get_message", description: "Get one Gmail message by id (read-only)." },
 ];
 
+export const NOTION_TOOLS: ToolSpec[] = [
+  { name: "notion_search", description: "Search Notion pages and databases (read-only)." },
+  { name: "get_page", description: "Get one Notion page by id (read-only)." },
+  { name: "get_block_children", description: "List the child blocks of a Notion block or page (read-only)." },
+];
+
 const GRACEFUL = "Sorry, I couldn't complete that — I hit an error.";
 
 /** Build the tool name -> handler map from whichever read-only clients are wired.
@@ -98,6 +108,12 @@ function buildDispatch(deps: OrchestratorDeps): Map<string, (args: unknown) => P
     dispatch.set("list_messages", (a) => gmail.listMessages(a));
     dispatch.set("get_message", (a) => gmail.getMessage(a));
   }
+  if (deps.notion) {
+    const notion = deps.notion;
+    dispatch.set("notion_search", (a) => notion.search(a));
+    dispatch.set("get_page", (a) => notion.getPage(a));
+    dispatch.set("get_block_children", (a) => notion.getBlockChildren(a));
+  }
   return dispatch;
 }
 
@@ -112,6 +128,7 @@ export async function runOrchestrator(
     ...CALENDAR_TOOLS,
     ...(deps.github ? GITHUB_TOOLS : []),
     ...(deps.gmail ? GMAIL_TOOLS : []),
+    ...(deps.notion ? NOTION_TOOLS : []),
   ];
   const gate = deps.gate ?? allowlistGate([...dispatch.keys()]);
   const messages: Message[] = [{ role: "user", content: input.text }];

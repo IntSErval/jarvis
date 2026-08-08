@@ -61,7 +61,7 @@ export function gmailClient(config: Config): GmailClient {
         refresh_token: refreshToken,
       }).toString(),
     });
-    if (!res.ok) throw new Error(`google token refresh failed: ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new Error(`gmail token refresh failed: ${res.status} ${await res.text()}`);
     const body = (await res.json()) as { access_token?: string; expires_in?: number };
     token = body.access_token ?? "";
     expiresAt = now() + (body.expires_in ?? 0) * 1000;

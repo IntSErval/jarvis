@@ -140,6 +140,41 @@ describe("runOrchestrator", () => {
     expect(out).toMatch(/sorry|couldn't|error/i);
   });
 
+  it("runs a notion tool call when a notion client is provided, and records it", async () => {
+    const results = [{ id: "p1", object: "page" }];
+    const search = vi.fn(async () => ({ results }));
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "n1", name: "notion_search", args: { query: "roadmap" } }], text: "" },
+        { toolCalls: [], text: "Found 1 page." },
+      ]),
+      notion: { search, getPage: async () => ({}), getBlockChildren: async () => ({}) },
+    });
+
+    const out = await runOrchestrator({ text: "find roadmap in notion", channel: "web" }, deps);
+
+    expect(search).toHaveBeenCalledWith({ query: "roadmap" });
+    expect(out).toBe("Found 1 page.");
+    expect(audits[0]!.status).toBe("ok");
+    expect(audits[0]!.tool_calls).toEqual([
+      { name: "notion_search", args: { query: "roadmap" }, result: { results } },
+    ]);
+  });
+
+  it("refuses notion tools when no notion client is wired (deny-by-default)", async () => {
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "n1", name: "notion_search", args: {} }], text: "" },
+      ]),
+    });
+
+    const out = await runOrchestrator({ text: "notion?", channel: "web" }, deps);
+
+    expect(audits[0]!.status).toBe("error");
+    expect(audits[0]!.error).toMatch(/permit|unknown|tool/i);
+    expect(out).toMatch(/sorry|couldn't|error/i);
+  });
+
   it("catches a tool failure, logs status=error, and returns a graceful message", async () => {
     const { audits, deps } = harness({
       model: scriptedModel([

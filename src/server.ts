@@ -7,6 +7,7 @@
 // ports) once you have keys — nothing else here changes.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
 import { runOrchestrator, type CalendarClient, type ModelClient } from "./orchestrator.js";
 import type { AuditStore } from "./db/audit.js";
 import { makeAuditLogger } from "./db/audit.js";
@@ -128,6 +129,23 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+// The Command Deck dashboard (imported Claude Design) ships as two static files
+// in public/. Serving them from a fixed allowlist avoids any path-traversal
+// surface. Paths resolve relative to this source file, not cwd.
+// ponytail: front-end shell — dreams/graph/skills/routines/approvals/health are
+// simulated in-page (those backends are Phase 3-5). Wire the audit ledger to
+// GET /audit when the real feed is worth showing.
+const STATIC_FILES: Record<string, { file: string; type: string }> = {
+  "/": { file: "index.html", type: "text/html; charset=utf-8" },
+  "/support.js": { file: "support.js", type: "text/javascript; charset=utf-8" },
+};
+
+async function serveStatic(res: ServerResponse, entry: { file: string; type: string }): Promise<void> {
+  const body = await readFile(new URL(`../public/${entry.file}`, import.meta.url));
+  res.writeHead(200, { "Content-Type": entry.type });
+  res.end(body);
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -141,7 +159,12 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
 
-    if (req.method === "GET" && url.pathname === "/") {
+    if (req.method === "GET" && url.pathname in STATIC_FILES) {
+      return serveStatic(res, STATIC_FILES[url.pathname]!);
+    }
+
+    // The original Phase-1 message + audit-feed page — the only functional UI.
+    if (req.method === "GET" && url.pathname === "/console") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       return res.end(dashboardPage());
     }

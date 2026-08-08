@@ -19,7 +19,8 @@ import { gmailClient, type GmailClient } from "./mail/gmail.js";
 import { notionClient, type NotionClient } from "./notion/notion.js";
 import { pgvectorMemory } from "./memory/pgvector.js";
 import { localEmbedder } from "./memory/localEmbedder.js";
-import type { MemoryStore } from "./memory/store.js";
+import { googleEmbedder } from "./memory/googleEmbedder.js";
+import type { Embedder, MemoryStore } from "./memory/store.js";
 import { dashboardPage } from "./dashboard.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -93,17 +94,21 @@ const gmail: GmailClient | undefined =
 const { NOTION_TOKEN } = process.env;
 const notion: NotionClient | undefined = NOTION_TOKEN ? notionClient({ token: NOTION_TOKEN }) : undefined;
 
-// Semantic memory: active when Supabase creds exist. Uses the free deterministic
-// localEmbedder until a real provider is wired (Task 2). Absent => the
-// orchestrator omits the memory_search tool (deny-by-default), $0 with no creds.
+// Semantic memory: active when Supabase creds exist. Real Google embeddings when
+// GOOGLE_AI_API_KEY is set, else the free deterministic localEmbedder (lexical
+// only). Absent Supabase creds => the orchestrator omits the memory_search tool
+// (deny-by-default), $0 with no creds.
 // ponytail: recall/remember 500 until db/memory.sql (memories table +
 // match_memories() RPC) is run in the Supabase SQL editor — infra, not code.
+const embedder: Embedder = process.env.GOOGLE_AI_API_KEY
+  ? googleEmbedder({ apiKey: process.env.GOOGLE_AI_API_KEY })
+  : localEmbedder();
 const memory: MemoryStore | undefined =
   process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY
     ? pgvectorMemory({
         url: process.env.SUPABASE_URL,
         serviceKey: process.env.SUPABASE_SERVICE_KEY,
-        embed: localEmbedder(),
+        embed: embedder,
       })
     : undefined;
 
@@ -114,7 +119,8 @@ console.log(
     `github=${GITHUB_TOKEN ? "on" : "off"} ` +
     `gmail=${gmail ? "on" : "off"} ` +
     `notion=${notion ? "on" : "off"} ` +
-    `memory=${memory ? "on" : "off"}`,
+    `memory=${memory ? "on" : "off"} ` +
+    `embed=${process.env.GOOGLE_AI_API_KEY ? "google" : "local"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {

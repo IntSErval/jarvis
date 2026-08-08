@@ -23,6 +23,8 @@ import { localEmbedder } from "./memory/localEmbedder.js";
 import { googleEmbedder } from "./memory/googleEmbedder.js";
 import type { Embedder, MemoryStore } from "./memory/store.js";
 import { dashboardPage } from "./dashboard.js";
+import { loadRoutines } from "./routines/routines.js";
+import { runDueRoutines } from "./routines/scheduler.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const AUDIT_FILE = process.env.AUDIT_FILE ?? "audit.json";
@@ -113,6 +115,31 @@ const memory: MemoryStore | undefined =
       })
     : undefined;
 
+// Single deps object shared by the POST /message handler and the routine
+// scheduler, so wiring a new capability never needs updating in two places.
+const orchestratorDeps = {
+  model,
+  calendar,
+  logAudit,
+  ...(github ? { github } : {}),
+  ...(gmail ? { gmail } : {}),
+  ...(notion ? { notion } : {}),
+  ...(memory ? { memory } : {}),
+};
+
+// Cron-triggered routines: opt-in via ROUTINES_FILE. Absent => no scheduler at
+// all (deny-by-default, $0 with no creds).
+// ponytail: one in-process 60s tick, no job queue — fine for a single user.
+if (process.env.ROUTINES_FILE) {
+  const routines = await loadRoutines(process.env.ROUTINES_FILE);
+  const timer = setInterval(() => {
+    void runDueRoutines(routines, new Date(), (prompt, channel) =>
+      runOrchestrator({ text: prompt, channel }, orchestratorDeps),
+    );
+  }, 60_000);
+  timer.unref();
+}
+
 console.log(
   `jarvis: model=${process.env.ANTHROPIC_API_KEY ? "anthropic" : "stub"} ` +
     `store=${process.env.SUPABASE_URL ? "supabase" : "file"} ` +
@@ -121,7 +148,8 @@ console.log(
     `gmail=${gmail ? "on" : "off"} ` +
     `notion=${notion ? "on" : "off"} ` +
     `memory=${memory ? "on" : "off"} ` +
-    `embed=${process.env.GOOGLE_AI_API_KEY ? "google" : "local"}`,
+    `embed=${process.env.GOOGLE_AI_API_KEY ? "google" : "local"} ` +
+    `routines=${process.env.ROUTINES_FILE ? "on" : "off"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -174,18 +202,7 @@ const server = createServer(async (req, res) => {
       if (typeof text !== "string" || text.length === 0) {
         return send(res, 400, { error: "body must include a non-empty 'text' string" });
       }
-      const reply = await runOrchestrator(
-        { text, channel },
-        {
-          model,
-          calendar,
-          logAudit,
-          ...(github ? { github } : {}),
-          ...(gmail ? { gmail } : {}),
-          ...(notion ? { notion } : {}),
-          ...(memory ? { memory } : {}),
-        },
-      );
+      const reply = await runOrchestrator({ text, channel }, orchestratorDeps);
       return send(res, 200, { reply });
     }
 

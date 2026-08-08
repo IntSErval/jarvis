@@ -105,6 +105,41 @@ describe("runOrchestrator", () => {
     expect(out).toMatch(/sorry|couldn't|error/i);
   });
 
+  it("runs a gmail tool call when a gmail client is provided, and records it", async () => {
+    const messages = [{ id: "m1", snippet: "hi" }];
+    const listMessages = vi.fn(async () => messages);
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "e1", name: "list_messages", args: { q: "is:unread" } }], text: "" },
+        { toolCalls: [], text: "You have 1 unread message." },
+      ]),
+      gmail: { listMessages, getMessage: async () => ({}) },
+    });
+
+    const out = await runOrchestrator({ text: "any unread email?", channel: "web" }, deps);
+
+    expect(listMessages).toHaveBeenCalledWith({ q: "is:unread" });
+    expect(out).toBe("You have 1 unread message.");
+    expect(audits[0]!.status).toBe("ok");
+    expect(audits[0]!.tool_calls).toEqual([
+      { name: "list_messages", args: { q: "is:unread" }, result: messages },
+    ]);
+  });
+
+  it("refuses gmail tools when no gmail client is wired (deny-by-default)", async () => {
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "e1", name: "list_messages", args: {} }], text: "" },
+      ]),
+    });
+
+    const out = await runOrchestrator({ text: "email?", channel: "web" }, deps);
+
+    expect(audits[0]!.status).toBe("error");
+    expect(audits[0]!.error).toMatch(/permit|unknown|tool/i);
+    expect(out).toMatch(/sorry|couldn't|error/i);
+  });
+
   it("catches a tool failure, logs status=error, and returns a graceful message", async () => {
     const { audits, deps } = harness({
       model: scriptedModel([

@@ -7,6 +7,7 @@
 // ports) once you have keys — nothing else here changes.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
 import { runOrchestrator, type CalendarClient, type ModelClient } from "./orchestrator.js";
 import type { AuditStore } from "./db/audit.js";
 import { makeAuditLogger } from "./db/audit.js";
@@ -17,7 +18,20 @@ import { googleCalendar } from "./calendar/google.js";
 import { githubClient, type GithubClient } from "./github/github.js";
 import { gmailClient, type GmailClient } from "./mail/gmail.js";
 import { notionClient, type NotionClient } from "./notion/notion.js";
+import { pgvectorMemory } from "./memory/pgvector.js";
+import { localEmbedder } from "./memory/localEmbedder.js";
+import { googleEmbedder } from "./memory/googleEmbedder.js";
+import type { Embedder, MemoryStore } from "./memory/store.js";
 import { dashboardPage } from "./dashboard.js";
+import { loadRoutines } from "./routines/routines.js";
+import { runDueRoutines } from "./routines/scheduler.js";
+import {
+  whatsappClient,
+  parseInboundMessage,
+  verifyWebhook,
+  verifySignature,
+  type WhatsappClient,
+} from "./messaging/whatsapp.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const AUDIT_FILE = process.env.AUDIT_FILE ?? "audit.json";
@@ -90,18 +104,111 @@ const gmail: GmailClient | undefined =
 const { NOTION_TOKEN } = process.env;
 const notion: NotionClient | undefined = NOTION_TOKEN ? notionClient({ token: NOTION_TOKEN }) : undefined;
 
+// WhatsApp gateway: active only when all four Meta creds are present. Absent =>
+// the /webhook/whatsapp routes 404 (deny-by-default, $0 with no creds).
+const {
+  WHATSAPP_TOKEN,
+  WHATSAPP_PHONE_NUMBER_ID,
+  WHATSAPP_VERIFY_TOKEN,
+  WHATSAPP_APP_SECRET,
+} = process.env;
+const whatsapp: WhatsappClient | undefined =
+  WHATSAPP_TOKEN && WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_VERIFY_TOKEN && WHATSAPP_APP_SECRET
+    ? whatsappClient({ token: WHATSAPP_TOKEN, phoneNumberId: WHATSAPP_PHONE_NUMBER_ID })
+    : undefined;
+
+// Semantic memory: active when Supabase creds exist. Real Google embeddings when
+// GOOGLE_AI_API_KEY is set, else the free deterministic localEmbedder (lexical
+// only). Absent Supabase creds => the orchestrator omits the memory_search tool
+// (deny-by-default), $0 with no creds.
+// ponytail: recall/remember 500 until db/memory.sql (memories table +
+// match_memories() RPC) is run in the Supabase SQL editor — infra, not code.
+const embedder: Embedder = process.env.GOOGLE_AI_API_KEY
+  ? googleEmbedder({ apiKey: process.env.GOOGLE_AI_API_KEY })
+  : localEmbedder();
+const memory: MemoryStore | undefined =
+  process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY
+    ? pgvectorMemory({
+        url: process.env.SUPABASE_URL,
+        serviceKey: process.env.SUPABASE_SERVICE_KEY,
+        embed: embedder,
+      })
+    : undefined;
+
+// Single deps object shared by the POST /message handler and the routine
+// scheduler, so wiring a new capability never needs updating in two places.
+const orchestratorDeps = {
+  model,
+  calendar,
+  logAudit,
+  ...(github ? { github } : {}),
+  ...(gmail ? { gmail } : {}),
+  ...(notion ? { notion } : {}),
+  ...(memory ? { memory } : {}),
+};
+
+// Cron-triggered routines: opt-in via ROUTINES_FILE. Absent => no scheduler at
+// all (deny-by-default, $0 with no creds).
+// ponytail: one in-process 60s tick, no job queue — fine for a single user.
+if (process.env.ROUTINES_FILE) {
+  // ponytail: routines loaded once at boot — editing routines.json needs a
+  // restart to take effect. Re-read per tick if hot-reload ever matters.
+  // ponytail: a malformed routines.json throws here and aborts startup — that's
+  // intentional fail-fast; better a loud boot failure than a silently dead scheduler.
+  const routines = await loadRoutines(process.env.ROUTINES_FILE);
+  // Optional: a routine with channel "whatsapp" delivers its reply to the user's
+  // own number (WHATSAPP_SELF). Only wired when both features + WHATSAPP_SELF are
+  // present; otherwise routines just get audited (Task 1 stays independent).
+  const deliver =
+    whatsapp && process.env.WHATSAPP_SELF
+      ? async (routine: { channel?: string }, reply: string) => {
+          if (routine.channel === "whatsapp") await whatsapp.sendText(process.env.WHATSAPP_SELF!, reply);
+        }
+      : undefined;
+  const timer = setInterval(() => {
+    void runDueRoutines(
+      routines,
+      new Date(),
+      (prompt, channel) => runOrchestrator({ text: prompt, channel }, orchestratorDeps),
+      deliver,
+    );
+  }, 60_000);
+  timer.unref();
+}
+
 console.log(
   `jarvis: model=${process.env.ANTHROPIC_API_KEY ? "anthropic" : "stub"} ` +
     `store=${process.env.SUPABASE_URL ? "supabase" : "file"} ` +
     `calendar=${GOOGLE_OAUTH_REFRESH_TOKEN ? "google" : "stub"} ` +
     `github=${GITHUB_TOKEN ? "on" : "off"} ` +
     `gmail=${gmail ? "on" : "off"} ` +
-    `notion=${notion ? "on" : "off"}`,
+    `notion=${notion ? "on" : "off"} ` +
+    `memory=${memory ? "on" : "off"} ` +
+    `embed=${process.env.GOOGLE_AI_API_KEY ? "google" : "local"} ` +
+    `routines=${process.env.ROUTINES_FILE ? "on" : "off"} ` +
+    `whatsapp=${whatsapp ? "on" : "off"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
+}
+
+// The Command Deck dashboard (imported Claude Design) ships as two static files
+// in public/. Serving them from a fixed allowlist avoids any path-traversal
+// surface. Paths resolve relative to this source file, not cwd.
+// ponytail: front-end shell — dreams/graph/skills/routines/approvals/health are
+// simulated in-page (those backends are Phase 3-5). Wire the audit ledger to
+// GET /audit when the real feed is worth showing.
+const STATIC_FILES: Record<string, { file: string; type: string }> = {
+  "/": { file: "index.html", type: "text/html; charset=utf-8" },
+  "/support.js": { file: "support.js", type: "text/javascript; charset=utf-8" },
+};
+
+async function serveStatic(res: ServerResponse, entry: { file: string; type: string }): Promise<void> {
+  const body = await readFile(new URL(`../public/${entry.file}`, import.meta.url));
+  res.writeHead(200, { "Content-Type": entry.type });
+  res.end(body);
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -117,7 +224,12 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
 
-    if (req.method === "GET" && url.pathname === "/") {
+    if (req.method === "GET" && url.pathname in STATIC_FILES) {
+      return serveStatic(res, STATIC_FILES[url.pathname]!);
+    }
+
+    // The original Phase-1 message + audit-feed page — the only functional UI.
+    if (req.method === "GET" && url.pathname === "/console") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       return res.end(dashboardPage());
     }
@@ -127,23 +239,49 @@ const server = createServer(async (req, res) => {
       if (typeof text !== "string" || text.length === 0) {
         return send(res, 400, { error: "body must include a non-empty 'text' string" });
       }
-      const reply = await runOrchestrator(
-        { text, channel },
-        {
-          model,
-          calendar,
-          logAudit,
-          ...(github ? { github } : {}),
-          ...(gmail ? { gmail } : {}),
-          ...(notion ? { notion } : {}),
-        },
-      );
+      const reply = await runOrchestrator({ text, channel }, orchestratorDeps);
       return send(res, 200, { reply });
     }
 
     if (req.method === "GET" && url.pathname === "/audit") {
       const limit = Number(url.searchParams.get("limit") ?? 20);
       return send(res, 200, { rows: await store.recent(Number.isFinite(limit) ? limit : 20) });
+    }
+
+    // WhatsApp webhook — only mounted when creds are wired (else falls through
+    // to 404, deny-by-default). Both directions are trust boundaries.
+    if (whatsapp && url.pathname === "/webhook/whatsapp") {
+      // Meta's subscription handshake: echo hub.challenge iff the verify token
+      // matches. 403 otherwise. WHATSAPP_VERIFY_TOKEN is guaranteed by the gate.
+      if (req.method === "GET") {
+        const challenge = verifyWebhook(
+          {
+            mode: url.searchParams.get("hub.mode") ?? undefined,
+            token: url.searchParams.get("hub.verify_token") ?? undefined,
+            challenge: url.searchParams.get("hub.challenge") ?? undefined,
+          },
+          WHATSAPP_VERIFY_TOKEN!,
+        );
+        if (challenge === null) return send(res, 403, { error: "verification failed" });
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        return res.end(challenge);
+      }
+
+      if (req.method === "POST") {
+        const raw = await readBody(req);
+        // Trust boundary: reject any body whose HMAC signature doesn't match.
+        if (!verifySignature(raw, req.headers["x-hub-signature-256"] as string | undefined, WHATSAPP_APP_SECRET!)) {
+          return send(res, 403, { error: "bad signature" });
+        }
+        const msg = parseInboundMessage(JSON.parse(raw || "{}"));
+        // Always 200 so WhatsApp doesn't retry; reply out-of-band if it's real text.
+        if (msg) {
+          void runOrchestrator({ text: msg.text, channel: "whatsapp" }, orchestratorDeps)
+            .then((reply) => whatsapp.sendText(msg.from, reply))
+            .catch(() => {}); // ponytail: swallow — WhatsApp is already ack'd; next msg retries
+        }
+        return send(res, 200, { ok: true });
+      }
     }
 
     return send(res, 404, { error: "not found" });

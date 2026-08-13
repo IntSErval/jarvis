@@ -7,6 +7,7 @@ import { allowlistGate, type Gate } from "./gate.js";
 import type { GithubClient } from "./github/github.js";
 import type { GmailClient } from "./mail/gmail.js";
 import type { NotionClient } from "./notion/notion.js";
+import type { MemoryStore } from "./memory/store.js";
 
 export interface OrchestratorInput {
   text: string;
@@ -58,6 +59,9 @@ export interface OrchestratorDeps {
   /** Optional read-only Notion surface. When present, its tools are exposed to
    *  the model and permitted by the default gate; absent => deny-by-default. */
   notion?: NotionClient;
+  /** Optional semantic-memory surface. When present, the read-only
+   *  `memory_search` tool is exposed and permitted; absent => deny-by-default. */
+  memory?: MemoryStore;
   logAudit: (input: AuditInput) => Promise<void>;
   /** Max model<->tool round trips before bailing (PRD 8 max-hop guard). */
   maxHops?: number;
@@ -89,6 +93,14 @@ export const NOTION_TOOLS: ToolSpec[] = [
   { name: "get_block_children", description: "List the child blocks of a Notion block or page (read-only)." },
 ];
 
+export const MEMORY_TOOLS: ToolSpec[] = [
+  {
+    name: "memory_search",
+    description:
+      "Semantically recall Jarvis's own past memories relevant to a query (read-only, RAG-style — returns the top matches, not a full dump). Args: { query: string, k?: number }.",
+  },
+];
+
 const GRACEFUL = "Sorry, I couldn't complete that — I hit an error.";
 
 /** Build the tool name -> handler map from whichever read-only clients are wired.
@@ -115,6 +127,15 @@ function buildDispatch(deps: OrchestratorDeps): Map<string, (args: unknown) => P
     dispatch.set("get_page", (a) => notion.getPage(a));
     dispatch.set("get_block_children", (a) => notion.getBlockChildren(a));
   }
+  if (deps.memory) {
+    const memory = deps.memory;
+    // recall(query, k) — unlike the single-arg clients, so unpack the tool args.
+    dispatch.set("memory_search", (a) => {
+      const { query, k } = (a ?? {}) as { query?: string; k?: number };
+      if (!query) throw new Error("memory_search: query is required");
+      return k === undefined ? memory.recall(query) : memory.recall(query, k);
+    });
+  }
   return dispatch;
 }
 
@@ -130,6 +151,7 @@ export async function runOrchestrator(
     ...(deps.github ? GITHUB_TOOLS : []),
     ...(deps.gmail ? GMAIL_TOOLS : []),
     ...(deps.notion ? NOTION_TOOLS : []),
+    ...(deps.memory ? MEMORY_TOOLS : []),
   ];
   const gate = deps.gate ?? allowlistGate([...dispatch.keys()]);
   const messages: Message[] = [{ role: "user", content: input.text }];

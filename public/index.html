@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<![CDATA[<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;background:#060607;}
+  body{--acc:#fcee0a;--acc2:#ff2e6d;--ink:#e9e9ec;--mut:#82828c;--dim:#4c4c56;--line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.055);
+    font-family:"JetBrains Mono",ui-monospace,monospace;color:#e9e9ec;-webkit-font-smoothing:antialiased;}
+  a{color:#fcee0a;text-decoration:none}a:hover{color:#fff}
+  ::selection{background:#fcee0a;color:#000}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border:3px solid #060607}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(252,238,10,.5)}
+  input{font-family:inherit}
+  @keyframes jv-pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  @keyframes jv-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}
+  @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms !important;transition-duration:.06s !important}}
+</style>
+</helmet>
+<div style="min-height:100vh;min-width:1320px;background:#060607;position:relative">
+
+<div style="position:fixed;inset:0;pointer-events:none;z-index:60;background:repeating-linear-gradient(180deg,rgba(255,255,255,.017) 0 1px,transparent 1px 3px);mix-blend-mode:overlay;opacity:{{ scanOpacity }}"></div>
+<div style="position:fixed;inset:0;pointer-events:none;z-index:59;background:radial-gradient(120% 90% at 50% 0%,transparent 40%,rgba(0,0,0,.65) 100%)"></div>
+
+<div style="display:flex;align-items:center;gap:26px;height:50px;padding:0 22px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(6,6,7,.86);backdrop-filter:blur(14px);z-index:40">
+  <div style="display:flex;align-items:baseline;gap:9px">
+    <span style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;letter-spacing:.16em;color:var(--ink);line-height:1">JARVIS</span>
+    <span style="font-size:9px;letter-spacing:.22em;color:var(--dim)">v0.4.1</span>
+  </div>
+  <div style="width:1px;height:20px;background:var(--line)"></div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span style="width:6px;height:6px;background:var(--acc);border-radius:50%;animation:jv-pulse 2.4s ease-in-out infinite;box-shadow:0 0 8px var(--acc)"></span>
+    <span style="font-size:10px;letter-spacing:.14em;color:var(--acc)">ORCHESTRATOR ONLINE</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:7px">
+    <span style="font-size:10px;letter-spacing:.14em;color:var(--dim)">WORKER</span>
+    <span style="font-size:10px;letter-spacing:.14em;color:var(--mut)">fly.iad · {{ uptime }}</span>
+  </div>
+  <div style="flex:1"></div>
+  <div style="display:flex;align-items:center;gap:7px">
+    <span style="font-size:10px;letter-spacing:.14em;color:var(--dim)">SPEND TODAY</span>
+    <span style="font-size:11px;color:var(--acc2);letter-spacing:.04em">${{ spend }}</span>
+    <span style="font-size:10px;color:var(--dim)">/ 12.00</span>
+  </div>
+  <div style="width:1px;height:20px;background:var(--line)"></div>
+  <div onClick="{{ openPalette }}" style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--line);cursor:pointer;transition:border-color 140ms cubic-bezier(.23,1,.32,1),background 140ms cubic-bezier(.23,1,.32,1)" style-hover="border-color:rgba(252,238,10,.55);background:rgba(252,238,10,.06)">
+    <span style="font-size:10px;letter-spacing:.14em;color:var(--mut)">COMMAND</span>
+    <span style="font-size:10px;color:var(--dim);border:1px solid var(--line);padding:1px 5px">⌘K</span>
+  </div>
+  <span style="font-size:11px;letter-spacing:.08em;color:var(--mut);min-width:74px;text-align:right">{{ clock }}</span>
+</div>
+
+<div style="display:flex;align-items:stretch;min-height:calc(100vh - 50px)">
+
+  <div style="width:186px;flex:none;border-right:1px solid var(--line);padding:20px 0 0;position:sticky;top:50px;height:calc(100vh - 50px)">
+    <div style="font-size:9px;letter-spacing:.24em;color:var(--dim);padding:0 18px 12px">SURFACES</div>
+    <sc-for list="{{ nav }}" as="n" hint-placeholder-count="5">
+      <div onClick="{{ n.go }}" style="display:flex;align-items:center;gap:11px;padding:9px 18px;cursor:pointer;border-left:2px solid {{ n.bar }};background:{{ n.bg }};transition:background 130ms cubic-bezier(.23,1,.32,1)">
+        <span style="font-size:11px;letter-spacing:.13em;color:{{ n.fg }}">{{ n.label }}</span>
+        <span style="flex:1"></span>
+        <span style="font-size:9px;color:{{ n.cfg }}">{{ n.count }}</span>
+      </div>
+    </sc-for>
+
+    <div style="position:absolute;bottom:0;left:0;right:0;padding:16px 18px;border-top:1px solid var(--line2)">
+      <div style="font-size:9px;letter-spacing:.24em;color:var(--dim);margin-bottom:10px">CONNECTORS</div>
+      <sc-for list="{{ connectors }}" as="c" hint-placeholder-count="4">
+        <div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+          <span style="width:5px;height:5px;border-radius:50%;background:{{ c.dot }}"></span>
+          <span style="font-size:10px;color:var(--mut);letter-spacing:.06em">{{ c.name }}</span>
+          <span style="flex:1"></span>
+          <span style="font-size:8px;letter-spacing:.12em;color:var(--dim)">{{ c.mode }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="flex:1;min-width:0;padding:22px 26px 40px">
+
+  <sc-if value="{{ isDeck }}" hint-placeholder-val="{{ true }}">
+  <div style="display:grid;grid-template-columns:minmax(300px,340px) minmax(620px,1fr) minmax(280px,320px);gap:26px;align-items:start">
+
+    <div style="display:flex;flex-direction:column;gap:24px">
+      <div style="border-left:1px solid var(--line);padding-left:15px">
+        <div style="font-size:9px;letter-spacing:.24em;color:var(--dim);margin-bottom:14px">CORE · SUBSTRATE</div>
+        <div style="position:relative;aspect-ratio:1;width:100%;max-width:300px">
+          <canvas ref="{{ orbRef }}" style="width:100%;height:100%;display:block"></canvas>
+          <div style="position:absolute;left:0;bottom:0;font-size:9px;letter-spacing:.16em;color:var(--dim)">NODES {{ nodeCount }}</div>
+          <div style="position:absolute;right:0;bottom:0;font-size:9px;letter-spacing:.16em;color:var(--acc)">{{ coreState }}</div>
+        </div>
+        <div style="margin-top:18px;padding:13px 0 0;border-top:1px solid var(--line2)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="width:4px;height:4px;background:var(--acc2);border-radius:50%"></span>
+            <span style="font-size:9px;letter-spacing:.2em;color:var(--acc2)">JARVIS</span>
+          </div>
+          <p style="margin:0;font-family:'Barlow Condensed';font-size:19px;line-height:1.32;letter-spacing:.005em;color:var(--ink);text-wrap:pretty">{{ utterance }}</p>
+          <div style="margin-top:11px;font-size:9px;letter-spacing:.14em;color:var(--dim)">{{ utterMeta }}</div>
+        </div>
+      </div>
+
+      <div style="border-left:1px solid var(--line);padding-left:15px">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:13px">
+          <span style="font-size:9px;letter-spacing:.24em;color:var(--dim)">BUDGET GUARDRAIL</span>
+          <span style="flex:1"></span>
+          <span style="font-size:9px;letter-spacing:.14em;color:var(--mut)">MONTH</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+          <span style="font-family:'Barlow Condensed';font-weight:700;font-size:40px;line-height:.9;letter-spacing:-.02em;color:var(--ink)">${{ mSpend }}</span>
+          <span style="font-size:11px;color:var(--dim)">of $120.00 cap</span>
+        </div>
+        <div style="height:3px;background:rgba(255,255,255,.07);margin:14px 0 10px;position:relative;overflow:hidden">
+          <div style="position:absolute;left:0;top:0;bottom:0;background:var(--acc);width:{{ mPct }}%;transition:width 400ms cubic-bezier(.23,1,.32,1)"></div>
+          <div style="position:absolute;left:78%;top:-3px;bottom:-3px;width:1px;background:var(--acc2)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;letter-spacing:.12em;color:var(--dim)">
+          <span>ALERT AT 78%</span><span>{{ daysLeft }} DAYS LEFT</span>
+        </div>
+        <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line2)">
+          <sc-for list="{{ costRows }}" as="r" hint-placeholder-count="4">
+            <div style="background:#060607;padding:9px 10px 9px 0">
+              <div style="font-size:9px;letter-spacing:.14em;color:var(--dim);margin-bottom:4px">{{ r.k }}</div>
+              <div style="font-size:13px;color:var(--ink);letter-spacing:.02em">{{ r.v }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:26px">
+      <div>
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px">
+          <span style="font-size:9px;letter-spacing:.24em;color:var(--dim)">LIVE TRACE · ORCHESTRATOR</span>
+          <span style="height:1px;flex:1;background:var(--line2)"></span>
+          <span style="font-size:9px;letter-spacing:.14em;color:var(--acc)">{{ runningCount }} ACTIVE</span>
+          <span style="font-size:9px;letter-spacing:.14em;color:var(--dim)">MAX HOPS 4</span>
+        </div>
+        <sc-for list="{{ traces }}" as="t" hint-placeholder-count="5">
+          <div style="border-bottom:1px solid var(--line2)">
+            <div onClick="{{ t.toggle }}" style="display:flex;align-items:center;gap:14px;padding:11px 8px 11px 0;cursor:pointer;transition:background 130ms cubic-bezier(.23,1,.32,1)" style-hover="background:rgba(255,255,255,.028)">
+              <span style="font-size:10px;color:var(--dim);width:12px;transition:transform 180ms cubic-bezier(.23,1,.32,1);transform:{{ t.caret }};display:inline-block">▸</span>
+              <span style="width:6px;height:6px;flex:none;background:{{ t.dot }};border-radius:50%;animation:{{ t.anim }}"></span>
+              <span style="font-size:11px;letter-spacing:.1em;color:var(--ink);flex:none;white-space:nowrap">{{ t.name }}</span>
+              <span style="font-size:11px;color:var(--mut);flex:1;min-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.desc }}</span>
+              <span style="font-size:10px;letter-spacing:.1em;color:{{ t.sfg }};flex:none;white-space:nowrap;text-align:right">{{ t.status }}</span>
+              <span style="font-size:10px;color:var(--dim);flex:none;min-width:52px;text-align:right">{{ t.dur }}</span>
+            </div>
+            <div style="display:grid;grid-template-rows:{{ t.rows }};transition:grid-template-rows 220ms cubic-bezier(.23,1,.32,1)">
+              <div style="overflow:hidden;min-height:0"><div style="padding:4px 0 16px 26px;border-left:1px solid var(--line2);margin-left:5px">
+                <sc-for list="{{ t.steps }}" as="s" hint-placeholder-count="3">
+                  <div style="display:flex;gap:12px;padding:5px 0;align-items:baseline">
+                    <span style="font-size:9px;color:var(--dim);min-width:26px">{{ s.i }}</span>
+                    <span style="font-size:10px;color:{{ s.fg }};min-width:150px;letter-spacing:.06em">{{ s.tool }}</span>
+                    <span style="font-size:10px;color:var(--mut);flex:1">{{ s.note }}</span>
+                    <span style="font-size:9px;color:var(--dim)">{{ s.model }}</span>
+                    <span style="font-size:9px;color:var(--dim);min-width:60px;text-align:right">{{ s.tok }}</span>
+                  </div>
+                </sc-for>
+              </div></div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div>
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px">
+          <span style="font-size:9px;letter-spacing:.24em;color:var(--dim)">ROUTINES · NEXT 24H</span>
+          <span style="height:1px;flex:1;background:var(--line2)"></span>
+          <span style="font-size:9px;letter-spacing:.14em;color:var(--dim)">CRON · WORKER</span>
+        </div>
+        <sc-for list="{{ upcoming }}" as="u" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--line2)">
+            <span style="font-size:11px;color:var(--acc);min-width:52px;letter-spacing:.06em">{{ u.at }}</span>
+            <span style="font-size:11px;color:var(--ink);min-width:170px;letter-spacing:.06em">{{ u.name }}</span>
+            <span style="font-size:10px;color:var(--mut);flex:1">{{ u.steps }}</span>
+            <span style="display:flex;gap:2px">
+              <sc-for list="{{ u.hist }}" as="h" hint-placeholder-count="8">
+                <span style="width:3px;height:13px;background:{{ h.c }}"></span>
+              </sc-for>
+            </span>
+            <span style="font-size:9px;color:var(--dim);min-width:44px;text-align:right">{{ u.rate }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div>
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px">
+          <span style="font-size:9px;letter-spacing:.24em;color:var(--dim)">APPROVAL QUEUE</span>
+          <span style="height:1px;flex:1;background:var(--line2)"></span>
+          <span style="font-size:9px;letter-spacing:.14em;color:var(--acc2)">{{ pendingCount }} BLOCKED ON YOU</span>
+        </div>
+        <sc-for list="{{ approvals }}" as="a" hint-placeholder-count="2">
+          <div style="display:flex;align-items:center;gap:16px;padding:12px 0;border-bottom:1px solid var(--line2)">
+            <span style="font-size:9px;letter-spacing:.14em;color:var(--acc2);border:1px solid rgba(255,46,109,.4);padding:2px 6px">{{ a.kind }}</span>
+            <span style="font-size:11px;color:var(--ink);flex:1;letter-spacing:.03em">{{ a.what }}</span>
+            <span style="font-size:9px;color:var(--dim)">{{ a.age }}</span>
+            <span onClick="{{ a.approve }}" style="font-size:10px;letter-spacing:.14em;color:#060607;background:var(--acc);padding:5px 12px;cursor:pointer;transition:transform 120ms cubic-bezier(.23,1,.32,1),filter 120ms ease" style-hover="filter:brightness(1.15)" style-active="transform:scale(.97)">APPROVE</span>
+            <span onClick="{{ a.deny }}" style="font-size:10px;letter-spacing:.14em;color:var(--mut);border:1px solid var(--line);padding:5px 12px;cursor:pointer;transition:transform 120ms cubic-bezier(.23,1,.32,1),color 120ms ease,border-color 120ms ease" style-hover="color:var(--acc2);border-color:rgba(255,46,109,.5)" style-active="transform:scale(.97)">DENY</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:24px">
+      <div style="border-left:1px solid var(--line);padding-left:15px">
+        <div style="font-size:9px;letter-spacing:.24em;color:var(--dim);margin-bottom:14px">SYSTEM HEALTH</div>
+        <sc-for list="{{ health }}" as="h" hint-placeholder-count="5">
+          <div style="padding:0 0 13px">
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+              <span style="font-size:10px;letter-spacing:.1em;color:var(--mut)">{{ h.k }}</span>
+              <span style="flex:1"></span>
+              <span style="font-size:12px;color:{{ h.fg }};letter-spacing:.02em">{{ h.v }}</span>
+            </div>
+            <div style="display:flex;gap:2px;align-items:flex-end;height:20px">
+              <sc-for list="{{ h.bars }}" as="b" hint-placeholder-count="16">
+                <span style="flex:1;height:{{ b.h }}%;background:{{ b.c }};transition:height 320ms cubic-bezier(.23,1,.32,1)"></span>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="border-left:1px solid var(--line);padding-left:15px">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:13px">
+          <span style="font-size:9px;letter-spacing:.24em;color:var(--dim)">DREAM JOURNAL</span>
+          <span style="flex:1"></span>
+          <span onClick="{{ goDreams }}" style="font-size:9px;letter-spacing:.14em;color:var(--acc);cursor:pointer">ALL {{ dreamCount }} →</span>
+        </div>
+        <sc-for list="{{ dreamPeek }}" as="d" hint-placeholder-count="2">
+          <div style="padding:0 0 15px;margin-bottom:15px;border-bottom:1px solid var(--line2)">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+              <span style="font-size:8px;letter-spacing:.16em;color:{{ d.fg }}">{{ d.cat }}</span>
+              <span style="flex:1"></span>
+              <span style="font-size:8px;color:var(--dim)">CONF {{ d.conf }}</span>
+            </div>
+            <div style="font-size:11px;line-height:1.5;color:var(--ink);text-wrap:pretty">{{ d.text }}</div>
+            <div style="margin-top:8px;font-size:9px;color:var(--dim);letter-spacing:.04em">{{ d.src }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="border-left:1px solid var(--line);padding-left:15px">
+        <div style="font-size:9px;letter-spacing:.24em;color:var(--dim);margin-bottom:13px">MEMORY SUBSTRATE</div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="font-family:'Barlow Condensed';font-weight:700;font-size:34px;line-height:.9;letter-spacing:-.02em;color:var(--ink)">{{ vaultNodes }}</span>
+          <span style="font-size:10px;color:var(--dim);letter-spacing:.1em">NODES</span>
+          <span style="flex:1"></span>
+          <span style="font-size:12px;color:var(--mut)">{{ vaultEdges }}</span>
+          <span style="font-size:10px;color:var(--dim);letter-spacing:.1em">EDGES</span>
+        </div>
+        <div style="margin-top:12px;font-size:10px;color:var(--mut);line-height:1.6">Last re-index {{ lastIndex }} · {{ vaultDelta }} files changed · read-only</div>
+        <div style="margin-top:12px;height:2px;background:rgba(255,255,255,.07);position:relative;overflow:hidden">
+          <div style="position:absolute;top:0;bottom:0;width:30%;background:var(--acc);animation:jv-sweep 2.6s cubic-bezier(.5,0,.5,1) infinite"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isDreams }}" hint-placeholder-val="{{ false }}">
+  <div style="max-width:1020px">
+    <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:6px">
+      <h1 style="margin:0;font-family:'Barlow Condensed';font-weight:700;font-size:34px;letter-spacing:.02em;color:var(--ink)">DREAM JOURNAL</h1>
+      <span style="font-size:10px;letter-spacing:.16em;color:var(--dim)">NIGHTLY 03:00 · FUSION PANEL · CAP 12/DAY</span>
+    </div>
+    <p style="margin:0 0 26px;font-size:12px;color:var(--mut);max-width:68ch;line-height:1.6">Candidates from last night's pass over decaying and low-connection vault regions. Accept promotes to a task or note. Dismiss lets it decay.</p>
+    <sc-for list="{{ dreams }}" as="d" hint-placeholder-count="4">
+      <div style="display:flex;gap:22px;padding:20px 0;border-top:1px solid var(--line2)">
+        <div style="width:110px;flex:none">
+          <div style="font-size:9px;letter-spacing:.16em;color:{{ d.fg }};margin-bottom:8px">{{ d.cat }}</div>
+          <div style="font-size:9px;color:var(--dim);letter-spacing:.1em">CONF {{ d.conf }}</div>
+          <div style="margin-top:6px;height:2px;background:rgba(255,255,255,.08);position:relative">
+            <div style="position:absolute;inset:0 auto 0 0;width:{{ d.confPct }}%;background:{{ d.fg }}"></div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:'Barlow Condensed';font-size:20px;line-height:1.35;color:var(--ink);text-wrap:pretty;letter-spacing:.005em">{{ d.text }}</div>
+          <div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">
+            <sc-for list="{{ d.notes }}" as="n" hint-placeholder-count="3">
+              <span style="font-size:10px;color:var(--mut);border:1px solid var(--line);padding:2px 7px;letter-spacing:.03em">{{ n.t }}</span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="width:190px;flex:none;display:flex;flex-direction:column;gap:7px;align-items:flex-end">
+          <span onClick="{{ d.accept }}" style="font-size:10px;letter-spacing:.14em;color:#060607;background:var(--acc);padding:6px 14px;cursor:pointer;transition:transform 120ms cubic-bezier(.23,1,.32,1),filter 120ms ease" style-hover="filter:brightness(1.15)" style-active="transform:scale(.97)">PROMOTE → TASK</span>
+          <span onClick="{{ d.dismiss }}" style="font-size:10px;letter-spacing:.14em;color:var(--mut);border:1px solid var(--line);padding:6px 14px;cursor:pointer;transition:transform 120ms cubic-bezier(.23,1,.32,1),color 120ms ease,border-color 120ms ease" style-hover="color:var(--acc2);border-color:rgba(255,46,109,.5)" style-active="transform:scale(.97)">LET IT DECAY</span>
+          <span style="font-size:9px;color:var(--dim);margin-top:2px">{{ d.state }}</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isGraph }}" hint-placeholder-val="{{ false }}">
+  <div>
+    <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:18px">
+      <h1 style="margin:0;font-family:'Barlow Condensed';font-weight:700;font-size:34px;letter-spacing:.02em;color:var(--ink)">KNOWLEDGE GRAPH</h1>
+      <span style="font-size:10px;letter-spacing:.16em;color:var(--dim)">OBSIDIAN VAULT · pgvector · READ-ONLY</span>
+      <span style="flex:1"></span>
+      <span style="font-size:10px;letter-spacing:.12em;color:var(--mut)">HOVER A NODE</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 260px;gap:26px;align-items:start">
+      <div style="border:1px solid var(--line);position:relative;height:620px">
+        <canvas ref="{{ graphRef }}" style="width:100%;height:100%;display:block"></canvas>
+        <div style="position:absolute;left:14px;top:12px;font-size:9px;letter-spacing:.18em;color:var(--dim)">CLUSTER VIEW · 3 HOPS</div>
+      </div>
+      <div style="border-left:1px solid var(--line);padding-left:15px">
+        <div style="font-size:9px;letter-spacing:.24em;color:var(--dim);margin-bottom:12px">SELECTION</div>
+        <div style="font-family:'Barlow Condensed';font-size:22px;line-height:1.2;color:var(--ink);margin-bottom:6px">{{ selNode }}</div>
+        <div style="font-size:10px;color:var(--mut);letter-spacing:.06em;margin-bottom:18px">{{ selMeta }}</div>
+        <sc-for list="{{ selStats }}" as="s" hint-placeholder-count="4">
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2)">
+            <span style="font-size:10px;color:var(--dim);letter-spacing:.1em">{{ s.k }}</span>
+            <span style="font-size:11px;color:var(--ink)">{{ s.v }}</span>
+          </div>
+        </sc-for>
+        <div style="margin-top:22px;font-size:9px;letter-spacing:.24em;color:var(--dim);margin-bottom:10px">CLUSTERS</div>
+        <sc-for list="{{ clusters }}" as="c" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:9px;padding:4px 0">
+            <span style="width:7px;height:7px;background:{{ c.c }}"></span>
+            <span style="font-size:10px;color:var(--mut);letter-spacing:.06em">{{ c.n }}</span>
+            <span style="flex:1"></span>
+            <span style="font-size:10px;color:var(--dim)">{{ c.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isSkills }}" hint-placeholder-val="{{ false }}">
+  <div style="max-width:1060px">
+    <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:6px">
+      <h1 style="margin:0;font-family:'Barlow Condensed';font-weight:700;font-size:34px;letter-spacing:.02em;color:var(--ink)">SKILL LIBRARY</h1>
+      <span style="font-size:10px;letter-spacing:.16em;color:var(--dim)">CLOSED-LOOP · OBSERVE → CLUSTER → DRAFT → APPROVE</span>
+    </div>
+    <p style="margin:0 0 24px;font-size:12px;color:var(--mut);max-width:68ch;line-height:1.6">Skills drafted from repeated task patterns in the trace log. Nothing goes live without your sign-off. Underperformers get retired automatically.</p>
+    <div style="display:flex;align-items:center;gap:0;padding:0 0 9px;border-bottom:1px solid var(--line)">
+      <span style="font-size:9px;letter-spacing:.16em;color:var(--dim);width:210px">SKILL</span>
+      <span style="font-size:9px;letter-spacing:.16em;color:var(--dim);flex:1">DRAFTED FROM</span>
+      <span style="font-size:9px;letter-spacing:.16em;color:var(--dim);width:80px">RUNS</span>
+      <span style="font-size:9px;letter-spacing:.16em;color:var(--dim);width:130px">SUCCESS</span>
+      <span style="font-size:9px;letter-spacing:.16em;color:var(--dim);width:110px;text-align:right">STATE</span>
+    </div>
+    <sc-for list="{{ skills }}" as="s" hint-placeholder-count="6">
+      <div style="display:flex;align-items:center;gap:0;padding:13px 0;border-bottom:1px solid var(--line2)">
+        <span style="font-size:11px;letter-spacing:.08em;color:var(--ink);width:210px">{{ s.name }}</span>
+        <span style="font-size:11px;color:var(--mut);flex:1">{{ s.from }}</span>
+        <span style="font-size:11px;color:var(--mut);width:80px">{{ s.runs }}</span>
+        <span style="width:130px;display:flex;align-items:center;gap:9px">
+          <span style="flex:1;height:2px;background:rgba(255,255,255,.08);position:relative">
+            <span style="position:absolute;inset:0 auto 0 0;width:{{ s.pct }}%;background:{{ s.c }}"></span>
+          </span>
+          <span style="font-size:10px;color:var(--mut)">{{ s.pct }}%</span>
+        </span>
+        <span style="width:110px;text-align:right;font-size:9px;letter-spacing:.14em;color:{{ s.c }}">{{ s.state }}</span>
+      </div>
+    </sc-for>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isAudit }}" hint-placeholder-val="{{ false }}">
+  <div style="max-width:1060px">
+    <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:6px">
+      <h1 style="margin:0;font-family:'Barlow Condensed';font-weight:700;font-size:34px;letter-spacing:.02em;color:var(--ink)">AUDIT LEDGER</h1>
+      <span style="font-size:10px;letter-spacing:.16em;color:var(--dim)">EVERY CONSEQUENTIAL ACTION · IMMUTABLE</span>
+    </div>
+    <p style="margin:0 0 24px;font-size:12px;color:var(--mut);max-width:68ch;line-height:1.6">Append-only. Writes, sends and pushes are flagged and carry the approval that authorised them.</p>
+    <sc-for list="{{ ledger }}" as="l" hint-placeholder-count="9">
+      <div style="display:flex;align-items:baseline;gap:16px;padding:10px 0;border-bottom:1px solid var(--line2)">
+        <span style="font-size:10px;color:var(--dim);width:92px;letter-spacing:.04em">{{ l.t }}</span>
+        <span style="font-size:9px;letter-spacing:.14em;color:{{ l.fg }};width:76px">{{ l.kind }}</span>
+        <span style="font-size:11px;color:var(--ink);flex:1;letter-spacing:.02em">{{ l.what }}</span>
+        <span style="font-size:10px;color:var(--mut);width:150px">{{ l.by }}</span>
+        <span style="font-size:10px;color:var(--dim);width:70px;text-align:right">{{ l.cost }}</span>
+      </div>
+    </sc-for>
+  </div>
+  </sc-if>
+
+  </div>
+</div>
+
+<sc-if value="{{ paletteOpen }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ closePalette }}" style="position:fixed;inset:0;z-index:70;background:rgba(4,4,5,.72);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding-top:14vh">
+  <div onClick="{{ stop }}" style="width:620px;max-width:92vw;background:#0a0a0c;border:1px solid rgba(252,238,10,.35);box-shadow:0 30px 90px rgba(0,0,0,.8)">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)">
+      <span style="font-size:11px;color:var(--acc);letter-spacing:.16em">›</span>
+      <input ref="{{ inputRef }}" value="{{ q }}" onChange="{{ onQ }}" placeholder="issue a command" style="flex:1;background:transparent;border:0;outline:0;color:var(--ink);font-size:13px;letter-spacing:.04em" />
+      <span style="font-size:9px;color:var(--dim);border:1px solid var(--line);padding:2px 6px;letter-spacing:.1em">ESC</span>
+    </div>
+    <div style="max-height:46vh;overflow-y:auto;padding:6px 0">
+      <sc-for list="{{ cmds }}" as="c" hint-placeholder-count="6">
+        <div onClick="{{ c.run }}" onMouseEnter="{{ c.hover }}" style="display:flex;align-items:center;gap:14px;padding:9px 18px;cursor:pointer;background:{{ c.bg }}">
+          <span style="font-size:9px;letter-spacing:.14em;color:{{ c.gfg }};width:70px">{{ c.group }}</span>
+          <span style="font-size:12px;color:{{ c.fg }};flex:1;letter-spacing:.03em">{{ c.label }}</span>
+          <span style="font-size:9px;color:var(--dim);letter-spacing:.1em">{{ c.hint }}</span>
+        </div>
+      </sc-for>
+      <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px 18px;font-size:12px;color:var(--mut);line-height:1.6">No such command. I only do what I was built to do.</div>
+      </sc-if>
+    </div>
+    <div style="display:flex;gap:18px;padding:9px 18px;border-top:1px solid var(--line);font-size:9px;letter-spacing:.12em;color:var(--dim)">
+      <span>↑↓ NAVIGATE</span><span>↵ EXECUTE</span><span style="flex:1"></span><span>ORCHESTRATOR READY</span>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+</div>]]>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1600,&quot;height&quot;:1000},&quot;accent&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Edgerunners yellow / magenta&quot;,&quot;Ice cyan / violet&quot;,&quot;Acid green / magenta&quot;,&quot;Amber CRT / red&quot;],&quot;default&quot;:&quot;Edgerunners yellow / magenta&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Look&quot;},&quot;scanlines&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Look&quot;},&quot;coreIntensity&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:70,&quot;min&quot;:20,&quot;max&quot;:100,&quot;step&quot;:5,&quot;unit&quot;:&quot;%&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Look&quot;},&quot;voice&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;In character&quot;,&quot;Neutral technical&quot;],&quot;default&quot;:&quot;In character&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Copy&quot;}}">
+class Component extends DCLogic {
+  orbRef = React.createRef();
+  graphRef = React.createRef();
+  inputRef = React.createRef();
+
+  state = {
+    screen: 'deck', paletteOpen: false, q: '', pi: 0, expanded: 'orch',
+    t: 0, clock: '', spend: 4.18, mSpend: 62.4, uptimeS: 1502720,
+    lat: [], err: [], q_: [], mem: [], tok: [],
+    utter: 0, hover: null,
+    dreams: [
+      {id:'d1',cat:'CONNECTION',conf:0.81,text:'Your "context rot" note and the Q3 retro both blame the same thing — you keep re-reading state instead of storing it. Same problem, two years apart.',notes:['context-rot.md','retro-2025-q3.md','agentic-hub/README.md'],state:''},
+      {id:'d2',cat:'CONTRADICTION',conf:0.74,text:'You wrote that the swarm is deferred until a capability wall. Then you spent Tuesday sketching four agent roles. Pick one.',notes:['jarvis-prd.md','scratch/2026-08-04.md'],state:''},
+      {id:'d3',cat:'QUESTION',conf:0.63,text:'Nothing in the vault says what happens when the worker dies mid-routine. You have no answer written down. That is not the same as not having a problem.',notes:['infra/hosting.md','routines/morning.md'],state:''},
+      {id:'d4',cat:'IDEA',conf:0.58,text:'Eleven notes tagged #croc-studios have gone untouched for ninety days. Either they are dead or you are avoiding them. Ask me to triage.',notes:['croc-studios/*','projects-index.md'],state:''}
+    ],
+    approvals: [
+      {id:'a1',kind:'SEND',what:'Reply to K. Alvarez — reschedule Thursday sync to 15:30',age:'6m'},
+      {id:'a2',kind:'WRITE',what:'Create calendar block: "deep work — orchestrator refactor", Fri 09:00–12:00',age:'21m'},
+      {id:'a3',kind:'SKILL',what:'Deploy drafted skill · triage-inbox-by-sender-weight',age:'2h'}
+    ],
+    sel: 'agentic-context-hub'
+  };
+
+  utterances = {
+    smasher: [
+      ['Calendar is clear until fourteen hundred. Do something with it or do not — I logged either way.','ROUTINE morning.brief · COMPLETED 06:00:04'],
+      ['Two hundred nineteen messages came in overnight. Nine of them matter. I already drafted three replies you will probably rewrite.','MCP gmail.classify · 219 IN · 9 FLAGGED'],
+      ['Your vault is a junkyard. I indexed all of it anyway. Three things in there are worth keeping.','MEM index delta · 41 FILES · 03:12:44'],
+      ['The Thursday sync collides with your deep-work block. I am not asking twice — approve the move or live with it.','APPROVAL a1 · PENDING 6m'],
+      ['I ran the whole morning pass while you were asleep. Do not thank me. Just read it.','ROUTINE morning.brief · 4 STEPS · 11.4s']
+    ],
+    neutral: [
+      ['Calendar clear until 14:00. Morning brief completed with no failures.','ROUTINE morning.brief · COMPLETED 06:00:04'],
+      ['219 messages processed overnight. 9 flagged as requiring attention. 3 replies drafted.','MCP gmail.classify · 219 IN · 9 FLAGGED'],
+      ['Vault re-index complete. 41 files changed. 3 high-relevance items surfaced.','MEM index delta · 41 FILES · 03:12:44'],
+      ['Scheduling conflict detected between Thursday sync and deep-work block. Approval pending.','APPROVAL a1 · PENDING 6m'],
+      ['Morning routine executed on schedule. 4 steps, no errors.','ROUTINE morning.brief · 4 STEPS · 11.4s']
+    ]
+  };
+
+  navDefs = [
+    {k:'deck',label:'COMMAND DECK',count:'—'},
+    {k:'dreams',label:'DREAM JOURNAL',count:'4'},
+    {k:'graph',label:'KNOWLEDGE GRAPH',count:'2.1k'},
+    {k:'skills',label:'SKILL LIBRARY',count:'6'},
+    {k:'audit',label:'AUDIT LEDGER',count:'∞'}
+  ];
+
+  traceDefs = [
+    {id:'orch',name:'ORCH.ROUTE',desc:'morning.brief → decompose → 4 tool calls',status:'RUNNING',dur:'8.2s',run:true,
+      steps:[{i:'01',tool:'intent.classify',note:'routine trigger, no ambiguity',model:'haiku',tok:'412'},
+             {i:'02',tool:'mcp.calendar.list',note:'3 events, 0 conflicts on primary',model:'—',tok:'—'},
+             {i:'03',tool:'mem.retrieve',note:'top-8 chunks, cosine ≥ 0.78',model:'embed-3',tok:'1.2k'},
+             {i:'04',tool:'compose.brief',note:'in progress — persona pass',model:'sonnet',tok:'6.4k'}]},
+    {id:'gmail',name:'MCP.GMAIL',desc:'classify 219 · read-only scope',status:'OK',dur:'3.1s',run:false,
+      steps:[{i:'01',tool:'gmail.messages.list',note:'since 2026-08-06T23:00Z',model:'—',tok:'—'},
+             {i:'02',tool:'batch.classify',note:'9 flagged, 187 archived, 23 newsletters',model:'haiku',tok:'18.9k'}]},
+    {id:'mem',name:'MEM.INDEX',desc:'vault delta 41 files → nodes/edges + embeddings',status:'RUNNING',dur:'2m 14s',run:true,
+      steps:[{i:'01',tool:'obsidian.rest.diff',note:'41 changed, 3 deleted',model:'—',tok:'—'},
+             {i:'02',tool:'parse.wikilinks',note:'112 new edges, 8 orphans',model:'—',tok:'—'},
+             {i:'03',tool:'pgvector.upsert',note:'writing 341 chunks',model:'embed-3',tok:'44.1k'}]},
+    {id:'skill',name:'SKILL.DRAFT',desc:'cluster hit — 7 occurrences of inbox triage pattern',status:'AWAIT APPROVAL',dur:'—',run:false,
+      steps:[{i:'01',tool:'trace.cluster',note:'7 traces, dbscan eps 0.22',model:'—',tok:'—'},
+             {i:'02',tool:'skill.synthesize',note:'prompt template + 3-tool sequence drafted',model:'sonnet',tok:'9.8k'}]},
+    {id:'gh',name:'MCP.GITHUB',desc:'watch jarvis-dashboard · 2 open PRs',status:'IDLE',dur:'—',run:false,
+      steps:[{i:'01',tool:'github.pulls.list',note:'#14 orchestrator-router, #15 pgvector-schema',model:'—',tok:'—'}]}
+  ];
+
+  cmdDefs = [
+    {group:'GO',label:'Command deck',hint:'G D',act:s=>({screen:'deck'})},
+    {group:'GO',label:'Dream journal',hint:'G J',act:s=>({screen:'dreams'})},
+    {group:'GO',label:'Knowledge graph',hint:'G K',act:s=>({screen:'graph'})},
+    {group:'GO',label:'Skill library',hint:'G S',act:s=>({screen:'skills'})},
+    {group:'GO',label:'Audit ledger',hint:'G L',act:s=>({screen:'audit'})},
+    {group:'RUN',label:'Run routine · morning.brief',hint:'now',act:s=>({screen:'deck'})},
+    {group:'RUN',label:'Re-index Obsidian vault',hint:'~4m',act:s=>({screen:'deck'})},
+    {group:'RUN',label:'Dream now — force a pass',hint:'costs ≈$0.40',act:s=>({screen:'dreams'})},
+    {group:'ASK',label:'What did I miss today?',hint:'orchestrator',act:s=>({screen:'deck'})},
+    {group:'ASK',label:'Summarise the last 24h of traces',hint:'orchestrator',act:s=>({screen:'audit'})},
+    {group:'SAFE',label:'Halt all autonomous loops',hint:'kill switch',act:s=>({screen:'deck'})},
+    {group:'SAFE',label:'Set daily spend cap',hint:'$12.00',act:s=>({screen:'deck'})}
+  ];
+
+  ledgerDefs = [
+    {t:'08:14:02',kind:'READ',what:'calendar.events.list — primary, 3 events',by:'routine morning.brief',cost:'$0.00'},
+    {t:'08:14:06',kind:'READ',what:'gmail.messages.list — 219 since 23:00Z',by:'routine morning.brief',cost:'$0.00'},
+    {t:'08:14:19',kind:'MODEL',what:'batch classification — 219 messages',by:'haiku · OmniRoute',cost:'$0.04'},
+    {t:'08:14:44',kind:'WRITE',what:'memory.append — brief summary, 4 entities linked',by:'orchestrator',cost:'$0.00'},
+    {t:'08:15:01',kind:'BLOCK',what:'calendar.events.insert — held for approval',by:'guardrail: irreversible',cost:'—'},
+    {t:'07:02:11',kind:'MODEL',what:'dream synthesis — 4 candidates from 26 proposals',by:'fusion · sonnet + haiku ×4',cost:'$0.38'},
+    {t:'03:12:44',kind:'READ',what:'obsidian.vault.diff — 41 files',by:'cron mem.index',cost:'$0.00'},
+    {t:'03:19:08',kind:'WRITE',what:'pgvector.upsert — 341 chunks',by:'cron mem.index',cost:'$0.02'},
+    {t:'01:40:55',kind:'ERROR',what:'github.pulls.list — 502, retried ×2, recovered',by:'worker fly.iad',cost:'—'}
+  ];
+
+  skillDefs = [
+    {name:'triage-inbox-weight',from:'7 traces · inbox sort by sender history',runs:'—',pct:0,state:'AWAIT APPROVAL',live:false},
+    {name:'meeting-prep-pack',from:'12 traces · pull notes + last thread before event',runs:'34',pct:94,state:'LIVE',live:true},
+    {name:'daily-plan-propose',from:'21 traces · calendar + open loops → ordered plan',runs:'58',pct:91,state:'LIVE',live:true},
+    {name:'note-orphan-linker',from:'9 traces · suggest wikilinks for new notes',runs:'17',pct:76,state:'LIVE',live:true},
+    {name:'pr-summary-digest',from:'5 traces · summarise diffs on watched repos',runs:'11',pct:63,state:'UNDER REVIEW',live:true},
+    {name:'auto-archive-noise',from:'6 traces · bulk-archive newsletters',runs:'8',pct:41,state:'RETIRED',live:false}
+  ];
+
+  clusterDefs = [
+    {n:'agentic systems',v:'412',c:'#fcee0a'},
+    {n:'croc studios',v:'286',c:'#ff2e6d'},
+    {n:'infra / hosting',v:'198',c:'#8f8f9a'},
+    {n:'daily logs',v:'744',c:'#4c4c56'}
+  ];
+
+  componentDidMount() {
+    this.applyAccent();
+    this.tick = setInterval(() => this.drift(), 1000);
+    this.utterT = setInterval(() => this.setState(s => ({utter: (s.utter + 1) % 5})), 9000);
+    this.onKey = (e) => {
+      if (!e.key) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.togglePalette(); return; }
+      if (!this.state.paletteOpen) return;
+      if (e.key === 'Escape') { e.preventDefault(); this.setState({paletteOpen:false}); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); this.move(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); this.move(-1); }
+      else if (e.key === 'Enter') { e.preventDefault(); this.exec(this.filtered()[this.state.pi]); }
+    };
+    window.addEventListener('keydown', this.onKey);
+    const seed = [];
+    for (let i = 0; i < 20; i++) seed.push(0);
+    this.setState({lat: seed.map(() => 340 + Math.random()*180), err: seed.map(() => Math.random()*2),
+      q_: seed.map(() => Math.random()*6), mem: seed.map(() => 40 + Math.random()*30), tok: seed.map(() => Math.random()*100)});
+    this.startOrb();
+  }
+  componentDidUpdate(pp, ps) {
+    if (this.props.accent !== pp.accent) this.applyAccent();
+    if (this.state.screen !== ps.screen) { this.startOrb(); this.startGraph(); }
+    if (this.state.paletteOpen && !ps.paletteOpen && this.inputRef.current) this.inputRef.current.focus();
+  }
+  componentWillUnmount() {
+    clearInterval(this.tick); clearInterval(this.utterT);
+    window.removeEventListener('keydown', this.onKey);
+    cancelAnimationFrame(this.raf); cancelAnimationFrame(this.graf);
+  }
+
+  applyAccent() {
+    const map = {
+      'Edgerunners yellow / magenta': ['#fcee0a','#ff2e6d'],
+      'Ice cyan / violet': ['#66e8ff','#a06bff'],
+      'Acid green / magenta': ['#9dff3c','#ff2e6d'],
+      'Amber CRT / red': ['#ffab2e','#ff4433']
+    };
+    const [a, b] = map[this.props.accent] || map['Edgerunners yellow / magenta'];
+    document.body.style.setProperty('--acc', a);
+    document.body.style.setProperty('--acc2', b);
+    this.acc = a; this.acc2 = b;
+  }
+
+  push(arr, v) { const a = arr.slice(1); a.push(v); return a; }
+  drift() {
+    const d = new Date();
+    const p = n => String(n).padStart(2,'0');
+    this.setState(s => ({
+      t: s.t + 1,
+      clock: p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()),
+      uptimeS: s.uptimeS + 1,
+      spend: Math.min(11.9, s.spend + Math.random()*0.012),
+      mSpend: s.mSpend + Math.random()*0.012,
+      lat: this.push(s.lat, 340 + Math.random()*180 + (Math.random()<0.08?160:0)),
+      err: this.push(s.err, Math.random()<0.12 ? Math.random()*4 : Math.random()*0.9),
+      q_: this.push(s.q_, Math.max(0, Math.random()*7)),
+      mem: this.push(s.mem, 40 + Math.random()*32),
+      tok: this.push(s.tok, Math.random()*100)
+    }));
+  }
+
+  startOrb() {
+    cancelAnimationFrame(this.raf);
+    const c = this.orbRef.current; if (!c) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const fit = () => { const r = c.getBoundingClientRect(); c.width = r.width*dpr; c.height = r.height*dpr; };
+    fit();
+    const N = 1100, pts = [];
+    for (let i = 0; i < N; i++) {
+      const y = 1 - (i/(N-1))*2, r = Math.sqrt(Math.max(0,1-y*y)), th = i*2.39996;
+      pts.push({x: Math.cos(th)*r, y, z: Math.sin(th)*r, k: Math.random(), sp: 0.6 + Math.random()*0.8});
+    }
+    let a = 0;
+    const loop = () => {
+      this.raf = requestAnimationFrame(loop);
+      if (!c.isConnected) return;
+      if (c.width === 0) fit();
+      const w = c.width, h = c.height, ctx = c.getContext('2d');
+      ctx.clearRect(0,0,w,h);
+      a += 0.0028;
+      const cx = w/2, cy = h/2, R = Math.min(w,h)*0.40;
+      const acc = this.acc || '#fcee0a', acc2 = this.acc2 || '#ff2e6d';
+      const inten = (this.props.coreIntensity ?? 70)/100;
+      const g = ctx.createRadialGradient(cx,cy,0,cx,cy,R*1.35);
+      g.addColorStop(0, 'rgba(255,255,255,'+(0.09*inten)+')');
+      g.addColorStop(0.45, 'rgba(255,255,255,0.018)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx,cy,R*1.35,0,6.2832); ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+      const ca = Math.cos(a), sa = Math.sin(a), tilt = 0.38, ct = Math.cos(tilt), st = Math.sin(tilt);
+      for (let i = 0; i < N; i++) {
+        const p = pts[i];
+        let x = p.x*ca - p.z*sa, z = p.x*sa + p.z*ca, y = p.y;
+        const y2 = y*ct - z*st, z2 = y*st + z*ct;
+        const pulse = 1 + Math.sin(a*7*p.sp + p.k*9)*0.028*inten;
+        const persp = 1.55/(1.55 - z2*0.55);
+        const sx = cx + x*R*pulse*persp, sy = cy + y2*R*pulse*persp;
+        const depth = (z2+1)/2;
+        let col;
+        if (p.k > 0.965) col = acc2; else if (p.k > 0.86) col = acc; else col = '#c9c9d2';
+        const alpha = (0.10 + depth*0.62) * (col === '#c9c9d2' ? 0.5 : 1) * (0.45 + inten*0.75);
+        const rad = (col === '#c9c9d2' ? 0.75 : 1.35) * (0.5 + depth) * dpr;
+        ctx.globalAlpha = Math.min(1, alpha);
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(sx, sy, rad, 0, 6.2832); ctx.fill();
+      }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = 'rgba(255,255,255,.09)'; ctx.lineWidth = dpr;
+      ctx.beginPath(); ctx.arc(cx,cy,R*1.22,-1.1,0.5); ctx.stroke();
+      ctx.strokeStyle = acc; ctx.globalAlpha = .8;
+      ctx.beginPath(); ctx.arc(cx,cy,R*1.22, a*2.2, a*2.2 + 0.42); ctx.stroke();
+      ctx.globalAlpha = 1;
+    };
+    loop();
+  }
+
+  startGraph() {
+    cancelAnimationFrame(this.graf);
+    const c = this.graphRef.current; if (!c) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const fit = () => { const r = c.getBoundingClientRect(); c.width = r.width*dpr; c.height = r.height*dpr; };
+    fit();
+    const names = ['agentic-context-hub','context-rot','omniroute','mcp-calendar','obsidian-sync','dream-log','skill-loop','croc-studios','retro-2025-q3','pgvector-schema','worker-hosting','morning-brief','memory-decay','tool-scoping','budget-caps','edge-cases','prompt-templates','trace-cluster','wikilinks','embeddings','fly-io','supabase','next-js','audit-trail'];
+    const cols = ['#fcee0a','#ff2e6d','#8f8f9a','#4c4c56'];
+    let rnd = 7;
+    const rand = () => { rnd = (rnd*16807) % 2147483647; return rnd/2147483647; };
+    const nodes = names.map((n,i) => ({n, g: i%4, x: rand(), y: rand(), r: 2 + rand()*5, ph: rand()*6.28, sp: 0.3+rand()*0.6}));
+    for (let i = 0; i < 26; i++) nodes.push({n:'', g:3, x:rand(), y:rand(), r:1.2+rand()*1.4, ph:rand()*6.28, sp:0.3+rand()*0.6});
+    const edges = [];
+    for (let i = 0; i < nodes.length; i++)
+      for (let k = 0; k < 2; k++) {
+        const j = Math.floor(rand()*nodes.length);
+        if (j !== i) edges.push([i,j]);
+      }
+    let mx = -1, my = -1;
+    c.onmousemove = e => { const r = c.getBoundingClientRect(); mx = (e.clientX-r.left)/r.width; my = (e.clientY-r.top)/r.height; };
+    c.onmouseleave = () => { mx = -1; my = -1; };
+    let t = 0;
+    const loop = () => {
+      this.graf = requestAnimationFrame(loop);
+      if (!c.isConnected) return;
+      if (c.width === 0) fit();
+      const w = c.width, h = c.height, ctx = c.getContext('2d');
+      ctx.clearRect(0,0,w,h); t += 0.006;
+      const pos = nodes.map(n => ({x: (0.06 + n.x*0.88)*w + Math.sin(t*n.sp+n.ph)*7*dpr, y: (0.06 + n.y*0.88)*h + Math.cos(t*n.sp*0.8+n.ph)*7*dpr}));
+      let near = -1, nd = 1e9;
+      if (mx >= 0) nodes.forEach((n,i) => { if (!n.n) return; const d = Math.hypot(pos[i].x/w - mx, pos[i].y/h - my); if (d < nd) { nd = d; near = i; } });
+      if (nd > 0.06) near = -1;
+      ctx.lineWidth = dpr*0.7;
+      edges.forEach(([i,j]) => {
+        const hot = near >= 0 && (i === near || j === near);
+        ctx.strokeStyle = hot ? (this.acc||'#fcee0a') : 'rgba(255,255,255,.055)';
+        ctx.globalAlpha = hot ? 0.75 : 1;
+        ctx.beginPath(); ctx.moveTo(pos[i].x,pos[i].y); ctx.lineTo(pos[j].x,pos[j].y); ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+      nodes.forEach((n,i) => {
+        const hot = i === near;
+        const col = hot ? (this.acc||'#fcee0a') : [this.acc||'#fcee0a', this.acc2||'#ff2e6d', '#8f8f9a', '#3c3c46'][n.g];
+        ctx.fillStyle = col; ctx.globalAlpha = n.n ? 1 : 0.5;
+        ctx.beginPath(); ctx.arc(pos[i].x,pos[i].y, n.r*dpr*(hot?1.7:1), 0, 6.2832); ctx.fill();
+        if (n.n && (n.r > 4.2 || hot)) {
+          ctx.globalAlpha = hot ? 1 : 0.55;
+          ctx.fillStyle = hot ? '#fff' : '#7a7a84';
+          ctx.font = (hot?600:400)+' '+(10*dpr)+'px "JetBrains Mono", monospace';
+          ctx.fillText(n.n, pos[i].x + (n.r+6)*dpr, pos[i].y + 3.5*dpr);
+        }
+        ctx.globalAlpha = 1;
+      });
+      if (near >= 0 && nodes[near].n !== this.state.sel) this.setState({sel: nodes[near].n});
+    };
+    loop();
+  }
+
+  togglePalette = () => this.setState(s => ({paletteOpen: !s.paletteOpen, q:'', pi:0}));
+  move(d) { const f = this.filtered(); this.setState(s => ({pi: (s.pi + d + f.length) % Math.max(1,f.length)})); }
+  filtered() { const q = this.state.q.toLowerCase().trim(); return q ? this.cmdDefs.filter(c => (c.label+' '+c.group).toLowerCase().includes(q)) : this.cmdDefs; }
+  exec(c) { if (!c) return; this.setState(Object.assign({paletteOpen:false, q:'', pi:0}, c.act(this.state))); }
+
+  fmtUptime(s) { const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60); return d+'d '+h+'h '+m+'m'; }
+
+  bars(arr, max, warn) {
+    return arr.map(v => ({h: Math.max(4, Math.min(100, v/max*100)), c: v/max > warn ? (this.acc2||'#ff2e6d') : 'rgba(255,255,255,.28)'}));
+  }
+
+  renderVals() {
+    const s = this.state, A = this.acc || '#fcee0a', B = this.acc2 || '#ff2e6d';
+    const inChar = (this.props.voice ?? 'In character') === 'In character';
+    const u = this.utterances[inChar ? 'smasher' : 'neutral'][s.utter];
+    const lastLat = s.lat.length ? s.lat[s.lat.length-1] : 412;
+    const lastErr = s.err.length ? s.err[s.err.length-1] : 0.4;
+    const lastQ = s.q_.length ? s.q_[s.q_.length-1] : 3;
+    const catFg = c => c === 'CONTRADICTION' ? B : c === 'IDEA' ? A : c === 'QUESTION' ? '#8f8f9a' : A;
+    const f = this.filtered();
+
+    return {
+      scanOpacity: (this.props.scanlines ?? true) ? 1 : 0,
+      clock: s.clock || '--:--:--',
+      uptime: this.fmtUptime(s.uptimeS),
+      spend: s.spend.toFixed(2),
+      mSpend: s.mSpend.toFixed(2),
+      mPct: Math.round(s.mSpend/120*100),
+      daysLeft: 23,
+      isDeck: s.screen === 'deck', isDreams: s.screen === 'dreams', isGraph: s.screen === 'graph',
+      isSkills: s.screen === 'skills', isAudit: s.screen === 'audit',
+      orbRef: this.orbRef, graphRef: this.graphRef, inputRef: this.inputRef,
+
+      nav: this.navDefs.map(n => ({...n,
+        bar: s.screen === n.k ? A : 'transparent',
+        bg: s.screen === n.k ? 'rgba(255,255,255,.045)' : 'transparent',
+        fg: s.screen === n.k ? '#e9e9ec' : '#82828c',
+        cfg: s.screen === n.k ? A : '#4c4c56',
+        go: () => this.setState({screen: n.k})
+      })),
+
+      connectors: [
+        {name:'calendar', mode:'RW', dot: A},
+        {name:'gmail', mode:'RO', dot: A},
+        {name:'notion', mode:'RO', dot: A},
+        {name:'github', mode:'RO', dot: '#4c4c56'},
+        {name:'obsidian', mode:'RO', dot: A}
+      ],
+
+      nodeCount: '2,148',
+      coreState: s.t % 8 < 5 ? 'THINKING' : 'IDLE',
+      utterance: u[0], utterMeta: u[1],
+
+      costRows: [
+        {k:'TOKENS 24H', v:'1.84M'},
+        {k:'CALLS 24H', v:'412'},
+        {k:'CHEAP / STRONG', v:'86 / 14%'},
+        {k:'AVG $ / TASK', v:'$0.031'}
+      ],
+
+      traces: this.traceDefs.map(t => ({...t,
+        toggle: () => this.setState(st => ({expanded: st.expanded === t.id ? null : t.id})),
+        caret: s.expanded === t.id ? 'rotate(90deg)' : 'rotate(0deg)',
+        rows: s.expanded === t.id ? '1fr' : '0fr',
+        dot: t.run ? A : t.status === 'AWAIT APPROVAL' ? B : '#4c4c56',
+        anim: t.run ? 'jv-pulse 1.6s ease-in-out infinite' : 'none',
+        sfg: t.run ? A : t.status === 'AWAIT APPROVAL' ? B : '#4c4c56',
+        steps: t.steps.map(st => ({...st, fg: st.note.indexOf('in progress') >= 0 ? A : '#a8a8b2'}))
+      })),
+      runningCount: this.traceDefs.filter(t => t.run).length,
+
+      upcoming: [
+        {at:'09:30', name:'standup.prep', steps:'calendar → notes → 3-line brief → messaging', rate:'96%', hist:[1,1,1,1,0,1,1,1]},
+        {at:'12:00', name:'inbox.sweep', steps:'gmail classify → flag → draft replies (held)', rate:'91%', hist:[1,1,0,1,1,1,1,1]},
+        {at:'18:00', name:'day.close', steps:'trace digest → open loops → tomorrow plan', rate:'99%', hist:[1,1,1,1,1,1,1,1]},
+        {at:'03:00', name:'dream.pass', steps:'sample decaying memory → fusion panel → judge', rate:'88%', hist:[1,0,1,1,1,0,1,1]}
+      ].map(r => ({...r, hist: r.hist.map(v => ({c: v ? 'rgba(255,255,255,.3)' : B}))})),
+
+      approvals: s.approvals.map(a => ({...a,
+        approve: () => this.setState(st => ({approvals: st.approvals.filter(x => x.id !== a.id)})),
+        deny: () => this.setState(st => ({approvals: st.approvals.filter(x => x.id !== a.id)}))
+      })),
+      pendingCount: s.approvals.length,
+
+      health: [
+        {k:'WORKER LATENCY', v: Math.round(lastLat)+'ms', fg: lastLat > 480 ? B : '#e9e9ec', bars: this.bars(s.lat, 600, 0.8)},
+        {k:'ERROR RATE', v: lastErr.toFixed(1)+'%', fg: lastErr > 2 ? B : '#e9e9ec', bars: this.bars(s.err, 5, 0.4)},
+        {k:'QUEUE DEPTH', v: Math.round(lastQ)+' jobs', fg:'#e9e9ec', bars: this.bars(s.q_, 8, 0.75)},
+        {k:'TOKENS / MIN', v: Math.round(s.tok[s.tok.length-1]||60)*42+'', fg:'#e9e9ec', bars: this.bars(s.tok, 100, 0.85)}
+      ],
+
+      dreams: s.dreams.map(d => ({...d,
+        fg: catFg(d.cat), conf: d.conf.toFixed(2), confPct: Math.round(d.conf*100),
+        notes: d.notes.map(t => ({t})),
+        text: d.text,
+        state: d.state,
+        accept: () => this.setState(st => ({dreams: st.dreams.map(x => x.id === d.id ? {...x, state:'PROMOTED → tasks'} : x)})),
+        dismiss: () => this.setState(st => ({dreams: st.dreams.filter(x => x.id !== d.id)}))
+      })),
+      dreamPeek: s.dreams.slice(0,2).map(d => ({cat:d.cat, fg:catFg(d.cat), conf:d.conf.toFixed(2), text:d.text, src:d.notes.slice(0,2).join(' · ')})),
+      dreamCount: s.dreams.length,
+      goDreams: () => this.setState({screen:'dreams'}),
+
+      vaultNodes: '2,148', vaultEdges: '9,412', lastIndex: '03:12', vaultDelta: 41,
+
+      selNode: s.sel, selMeta: 'vault/projects · 14 backlinks · last touched 2d ago',
+      selStats: [
+        {k:'DEGREE', v:'14'}, {k:'CHUNKS', v:'62'}, {k:'DECAY', v:'0.12'}, {k:'CITED BY JARVIS', v:'31×'}
+      ],
+      clusters: this.clusterDefs.map(c => ({...c, c: c.c === '#fcee0a' ? A : c.c === '#ff2e6d' ? B : c.c})),
+
+      skills: this.skillDefs.map(sk => ({...sk,
+        c: sk.state === 'LIVE' ? A : sk.state === 'RETIRED' ? '#4c4c56' : B
+      })),
+
+      ledger: this.ledgerDefs.map(l => ({...l,
+        fg: l.kind === 'ERROR' || l.kind === 'BLOCK' ? B : l.kind === 'WRITE' ? A : '#82828c'
+      })),
+
+      paletteOpen: s.paletteOpen, q: s.q,
+      onQ: e => this.setState({q: e.target.value, pi: 0}),
+      openPalette: this.togglePalette,
+      closePalette: () => this.setState({paletteOpen:false}),
+      stop: e => e.stopPropagation(),
+      noResults: f.length === 0,
+      cmds: f.map((c,i) => ({...c,
+        bg: i === s.pi ? 'rgba(255,255,255,.06)' : 'transparent',
+        fg: i === s.pi ? '#fff' : '#c2c2ca',
+        gfg: c.group === 'SAFE' ? B : A,
+        hover: () => this.setState({pi: i}),
+        run: () => this.exec(c)
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

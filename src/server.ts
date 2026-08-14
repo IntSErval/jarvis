@@ -13,6 +13,8 @@ import type { AuditStore } from "./db/audit.js";
 import { makeAuditLogger } from "./db/audit.js";
 import { fileAuditStore } from "./store/fileAudit.js";
 import { supabaseAuditStore } from "./store/supabaseAudit.js";
+import { fileApprovalStore } from "./store/fileApprovals.js";
+import type { ApprovalStatus, ApprovalStore } from "./db/approvals.js";
 import { anthropicModel } from "./model/anthropic.js";
 import { googleCalendar } from "./calendar/google.js";
 import { githubClient, type GithubClient } from "./github/github.js";
@@ -135,6 +137,14 @@ const memory: MemoryStore | undefined =
       })
     : undefined;
 
+// Write-approval store (Phase 4): opt-in via APPROVALS_FILE. Present => gated
+// write tools are exposed and parked here as pending approvals for a human to
+// approve/deny; absent => the orchestrator omits write tools entirely
+// (deny-by-default, $0 with no creds). Mirrors the ROUTINES_FILE opt-in.
+const approvals: ApprovalStore | undefined = process.env.APPROVALS_FILE
+  ? fileApprovalStore(process.env.APPROVALS_FILE)
+  : undefined;
+
 // Single deps object shared by the POST /message handler and the routine
 // scheduler, so wiring a new capability never needs updating in two places.
 const orchestratorDeps = {
@@ -145,6 +155,7 @@ const orchestratorDeps = {
   ...(gmail ? { gmail } : {}),
   ...(notion ? { notion } : {}),
   ...(memory ? { memory } : {}),
+  ...(approvals ? { approvals } : {}),
 };
 
 // Cron-triggered routines: opt-in via ROUTINES_FILE. Absent => no scheduler at
@@ -186,7 +197,8 @@ console.log(
     `memory=${memory ? "on" : "off"} ` +
     `embed=${process.env.GOOGLE_AI_API_KEY ? "google" : "local"} ` +
     `routines=${process.env.ROUTINES_FILE ? "on" : "off"} ` +
-    `whatsapp=${whatsapp ? "on" : "off"}`,
+    `whatsapp=${whatsapp ? "on" : "off"} ` +
+    `approvals=${approvals ? "on" : "off"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -246,6 +258,29 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/audit") {
       const limit = Number(url.searchParams.get("limit") ?? 20);
       return send(res, 200, { rows: await store.recent(Number.isFinite(limit) ? limit : 20) });
+    }
+
+    // Approval queue — only mounted when APPROVALS_FILE is wired (else 404,
+    // deny-by-default). GET lists (optionally filtered by ?status=pending);
+    // POST /approvals/:id decides one with { "status": "approved" | "denied" }.
+    // ponytail: deciding just flips the row's status — executing an approved
+    // write (the actual Notion call) is a later phase, not wired here yet.
+    if (approvals && req.method === "GET" && url.pathname === "/approvals") {
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const rows = await approvals.recent(Number.isFinite(limit) ? limit : 50);
+      const status = url.searchParams.get("status");
+      return send(res, 200, { rows: status ? rows.filter((r) => r.status === status) : rows });
+    }
+
+    if (approvals && req.method === "POST" && url.pathname.startsWith("/approvals/")) {
+      const id = decodeURIComponent(url.pathname.slice("/approvals/".length));
+      const { status } = JSON.parse((await readBody(req)) || "{}") as { status?: ApprovalStatus };
+      if (status !== "approved" && status !== "denied") {
+        return send(res, 400, { error: "body must include status 'approved' or 'denied'" });
+      }
+      const updated = await approvals.setStatus(id, status);
+      if (!updated) return send(res, 404, { error: "no approval with that id" });
+      return send(res, 200, { row: updated });
     }
 
     // WhatsApp webhook — only mounted when creds are wired (else falls through

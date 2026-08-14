@@ -7,7 +7,23 @@ import {
   type OrchestratorDeps,
 } from "./orchestrator.js";
 import type { AuditInput } from "./db/audit.js";
+import type { Approval, ApprovalStore } from "./db/approvals.js";
 import { allowlistGate } from "./gate.js";
+
+/** In-memory approval store that captures parked rows. */
+function fakeApprovals(): { store: ApprovalStore; parked: Approval[] } {
+  const parked: Approval[] = [];
+  return {
+    parked,
+    store: {
+      insert: async (r) => {
+        parked.push(r);
+      },
+      recent: async (limit) => parked.slice(-limit).reverse(),
+      setStatus: async () => undefined,
+    },
+  };
+}
 
 /** Model that replays a scripted sequence of turns, repeating the last one. */
 function scriptedModel(turns: ModelTurn[]): ModelClient {
@@ -286,6 +302,48 @@ describe("runOrchestrator", () => {
     expect(out).toMatch(/sorry|couldn't|error/i);
     expect(audits[0]!.status).toBe("error");
     expect(audits[0]!.error).toContain("model gateway timeout");
+  });
+
+  it("parks a write tool as a pending approval instead of executing it, when an approval store is wired", async () => {
+    const { store, parked } = fakeApprovals();
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "w1", name: "notion_create_page", args: { title: "Notes" } }], text: "" },
+        { toolCalls: [], text: "Queued that for your approval." },
+      ]),
+      approvals: store,
+    });
+
+    const out = await runOrchestrator({ text: "make a notion page", channel: "web" }, deps);
+
+    expect(out).toBe("Queued that for your approval.");
+    expect(parked).toHaveLength(1);
+    expect(parked[0]).toMatchObject({
+      tool: "notion_create_page",
+      args: { title: "Notes" },
+      status: "pending",
+      decided_at: null,
+    });
+    // Parked, not executed — the audit records it as an ok round trip with the approval id.
+    expect(audits[0]!.status).toBe("ok");
+    expect(audits[0]!.tool_calls![0]).toMatchObject({
+      name: "notion_create_page",
+      result: { parked: true, approvalId: parked[0]!.id, status: "pending" },
+    });
+  });
+
+  it("refuses write tools when no approval store is wired (deny-by-default)", async () => {
+    const { audits, deps } = harness({
+      model: scriptedModel([
+        { toolCalls: [{ id: "w1", name: "notion_create_page", args: {} }], text: "" },
+      ]),
+    });
+
+    const out = await runOrchestrator({ text: "make a page", channel: "web" }, deps);
+
+    expect(audits[0]!.status).toBe("error");
+    expect(audits[0]!.error).toMatch(/permit|unknown|tool/i);
+    expect(out).toMatch(/sorry|couldn't|error/i);
   });
 
   it("stops at the max-hop limit instead of looping forever", async () => {

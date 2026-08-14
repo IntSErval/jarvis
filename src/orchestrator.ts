@@ -3,6 +3,7 @@
 // unit-testable without live model/calendar/db.
 
 import type { AuditInput, ToolCallRecord } from "./db/audit.js";
+import { buildApproval, type ApprovalStore } from "./db/approvals.js";
 import { allowlistGate, type Gate } from "./gate.js";
 import type { GithubClient } from "./github/github.js";
 import type { GmailClient } from "./mail/gmail.js";
@@ -62,6 +63,10 @@ export interface OrchestratorDeps {
   /** Optional semantic-memory surface. When present, the read-only
    *  `memory_search` tool is exposed and permitted; absent => deny-by-default. */
   memory?: MemoryStore;
+  /** Optional write-approval store. When present, gated write tools (WRITE_TOOLS)
+   *  are exposed and, instead of executing, are parked here as pending approvals
+   *  for a human to approve/deny on the dashboard; absent => deny-by-default. */
+  approvals?: ApprovalStore;
   logAudit: (input: AuditInput) => Promise<void>;
   /** Max model<->tool round trips before bailing (PRD 8 max-hop guard). */
   maxHops?: number;
@@ -92,6 +97,17 @@ export const NOTION_TOOLS: ToolSpec[] = [
   { name: "get_page", description: "Get one Notion page by id (read-only)." },
   { name: "get_block_children", description: "List the child blocks of a Notion block or page (read-only)." },
 ];
+
+// Phase 4 gated writes: exposed only when an ApprovalStore is wired. These never
+// execute in the loop — they are parked as pending approvals for a human.
+export const WRITE_TOOLS: ToolSpec[] = [
+  {
+    name: "notion_create_page",
+    description:
+      "Propose creating a Notion page. This does NOT execute immediately — it is parked for the user's approval. Args: { parent: string, title: string, ... }.",
+  },
+];
+const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name));
 
 export const MEMORY_TOOLS: ToolSpec[] = [
   {
@@ -152,8 +168,12 @@ export async function runOrchestrator(
     ...(deps.gmail ? GMAIL_TOOLS : []),
     ...(deps.notion ? NOTION_TOOLS : []),
     ...(deps.memory ? MEMORY_TOOLS : []),
+    ...(deps.approvals ? WRITE_TOOLS : []),
   ];
-  const gate = deps.gate ?? allowlistGate([...dispatch.keys()]);
+  // Write tools have no dispatch handler (they're parked, not executed), so add
+  // their names to the default allowlist when an approval store is wired.
+  const permitted = [...dispatch.keys(), ...(deps.approvals ? WRITE_TOOL_NAMES : [])];
+  const gate = deps.gate ?? allowlistGate(permitted);
   const messages: Message[] = [{ role: "user", content: input.text }];
   const toolCalls: ToolCallRecord[] = [];
 
@@ -175,6 +195,17 @@ export async function runOrchestrator(
           const reason = decision.reason ?? `tool not permitted: ${call.name}`;
           toolCalls.push({ name: call.name, args: call.args, error: reason });
           return await finish(GRACEFUL, "error", reason);
+        }
+        // Gated write: park it as a pending approval instead of executing, then
+        // tell the model it's queued so it can respond to the user.
+        if (WRITE_TOOL_NAMES.has(call.name) && deps.approvals) {
+          const parked = buildApproval({ channel: input.channel, tool: call.name, args: call.args });
+          await deps.approvals.insert(parked);
+          const result = { parked: true, approvalId: parked.id, status: parked.status };
+          toolCalls.push({ name: call.name, args: call.args, result });
+          messages.push({ role: "assistant", content: "", toolCallId: call.id });
+          messages.push({ role: "tool", content: JSON.stringify(result), toolCallId: call.id });
+          continue;
         }
         try {
           const handler = dispatch.get(call.name);

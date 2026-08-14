@@ -434,11 +434,7 @@ class Component extends DCLogic {
       {id:'d3',cat:'QUESTION',conf:0.63,text:'Nothing in the vault says what happens when the worker dies mid-routine. You have no answer written down. That is not the same as not having a problem.',notes:['infra/hosting.md','routines/morning.md'],state:''},
       {id:'d4',cat:'IDEA',conf:0.58,text:'Eleven notes tagged #croc-studios have gone untouched for ninety days. Either they are dead or you are avoiding them. Ask me to triage.',notes:['croc-studios/*','projects-index.md'],state:''}
     ],
-    approvals: [
-      {id:'a1',kind:'SEND',what:'Reply to K. Alvarez — reschedule Thursday sync to 15:30',age:'6m'},
-      {id:'a2',kind:'WRITE',what:'Create calendar block: "deep work — orchestrator refactor", Fri 09:00–12:00',age:'21m'},
-      {id:'a3',kind:'SKILL',what:'Deploy drafted skill · triage-inbox-by-sender-weight',age:'2h'}
-    ],
+    approvals: [], // wired to GET /approvals?status=pending in componentDidMount
     sel: 'agentic-context-hub'
   };
 
@@ -549,6 +545,9 @@ class Component extends DCLogic {
     this.setState({lat: seed.map(() => 340 + Math.random()*180), err: seed.map(() => Math.random()*2),
       q_: seed.map(() => Math.random()*6), mem: seed.map(() => 40 + Math.random()*30), tok: seed.map(() => Math.random()*100)});
     this.startOrb();
+    // Live approval queue — replaces the demo seed with real parked writes.
+    this.loadApprovals();
+    this.apprT = setInterval(() => this.loadApprovals(), 5000);
   }
   componentDidUpdate(pp, ps) {
     if (this.props.accent !== pp.accent) this.applyAccent();
@@ -556,9 +555,54 @@ class Component extends DCLogic {
     if (this.state.paletteOpen && !ps.paletteOpen && this.inputRef.current) this.inputRef.current.focus();
   }
   componentWillUnmount() {
-    clearInterval(this.tick); clearInterval(this.utterT);
+    clearInterval(this.tick); clearInterval(this.utterT); clearInterval(this.apprT);
     window.removeEventListener('keydown', this.onKey);
     cancelAnimationFrame(this.raf); cancelAnimationFrame(this.graf);
+  }
+
+  // --- Live approval queue (Phase 4) ---
+  // Pulls parked writes from the worker; each row -> {id, kind, what, age}, the
+  // shape the panel already renders. A 404 (APPROVALS_FILE not set => route not
+  // mounted) or empty result just yields an empty queue. Network error keeps the
+  // current list so a blip doesn't wipe the panel.
+  async loadApprovals() {
+    try {
+      const res = await fetch('/approvals?status=pending');
+      if (!res.ok) { this.setState({approvals: []}); return; }
+      const { rows } = await res.json();
+      this.setState({approvals: rows.map(r => ({
+        id: r.id, kind: this.approvalKind(r.tool),
+        what: this.approvalWhat(r.tool, r.args), age: this.ago(r.ts)
+      }))});
+    } catch (_) { /* transient — leave the queue as-is */ }
+  }
+  async decideApproval(id, status) {
+    // Optimistic remove for a snappy click, then reconcile with the server.
+    this.setState(st => ({approvals: st.approvals.filter(x => x.id !== id)}));
+    try {
+      await fetch('/approvals/' + encodeURIComponent(id), {
+        method: 'POST', headers: {'content-type': 'application/json'},
+        body: JSON.stringify({status})
+      });
+    } catch (_) {}
+    this.loadApprovals();
+  }
+  approvalKind(tool) {
+    const t = (tool || '').toLowerCase();
+    return t.includes('send') || t.includes('reply') ? 'SEND' : t.includes('skill') ? 'SKILL' : 'WRITE';
+  }
+  approvalWhat(tool, args) {
+    const a = args || {};
+    const detail = a.title || a.subject || a.name ||
+      (a && typeof a === 'object' && Object.keys(a).length ? JSON.stringify(a).slice(0, 72) : '');
+    return detail ? tool + ' · ' + detail : tool;
+  }
+  ago(ts) {
+    const s = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 1000));
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s / 60) + 'm';
+    if (s < 86400) return Math.floor(s / 3600) + 'h';
+    return Math.floor(s / 86400) + 'd';
   }
 
   applyAccent() {
@@ -784,8 +828,8 @@ class Component extends DCLogic {
       ].map(r => ({...r, hist: r.hist.map(v => ({c: v ? 'rgba(255,255,255,.3)' : B}))})),
 
       approvals: s.approvals.map(a => ({...a,
-        approve: () => this.setState(st => ({approvals: st.approvals.filter(x => x.id !== a.id)})),
-        deny: () => this.setState(st => ({approvals: st.approvals.filter(x => x.id !== a.id)}))
+        approve: () => this.decideApproval(a.id, 'approved'),
+        deny: () => this.decideApproval(a.id, 'denied')
       })),
       pendingCount: s.approvals.length,
 

@@ -21,6 +21,8 @@ export function dashboardPage(): string {
     .row { border-top: 1px solid #ddd; padding: .5rem 0; font-size: 13px; }
     .row .meta { color: #888; }
     .err { color: #b00; }
+    .ok { color: #087; }
+    .row button { padding: .2rem .6rem; margin-right: .4rem; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -30,6 +32,8 @@ export function dashboardPage(): string {
     <button type="submit">Send</button>
   </form>
   <div id="reply"></div>
+  <h1>Approvals</h1>
+  <div id="approvals">loading…</div>
   <h1>Audit feed</h1>
   <div id="feed">loading…</div>
   <script>
@@ -55,6 +59,56 @@ export function dashboardPage(): string {
       return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     }
 
+    // Approval queue (Phase 4): pending parked writes get approve/deny buttons;
+    // decided rows show their outcome (approved/denied, then executed/failed once
+    // the write runs). 404 => APPROVALS_FILE unset, so the route isn't mounted.
+    async function loadApprovals() {
+      try {
+        const res = await fetch("/approvals?limit=20");
+        if (!res.ok) { $("approvals").innerHTML = '<div class="row meta">approvals off</div>'; return; }
+        const { rows } = await res.json();
+        $("approvals").innerHTML = rows.length
+          ? rows.map(renderApproval).join("")
+          : '<div class="row">nothing queued</div>';
+      } catch (e) {
+        $("approvals").innerHTML = '<div class="row err">could not load approvals</div>';
+      }
+    }
+
+    function statusLabel(r) {
+      if (r.status === "failed") return '<span class="err">failed' + (r.error ? ": " + escapeHtml(r.error) : "") + "</span>";
+      if (r.status === "executed") return '<span class="ok">executed</span>';
+      return escapeHtml(r.status);
+    }
+
+    function renderApproval(r) {
+      const controls = r.status === "pending"
+        ? '<button data-approve="' + escapeHtml(r.id) + '">approve</button>' +
+          '<button data-deny="' + escapeHtml(r.id) + '">deny</button>'
+        : "";
+      return '<div class="row"><span class="meta">' + r.ts + " · " + escapeHtml(r.tool) + " · " +
+        statusLabel(r) + "</span><br>" + escapeHtml(JSON.stringify(r.args)) + "<br>" + controls + "</div>";
+    }
+
+    async function decide(id, status) {
+      try {
+        await fetch("/approvals/" + encodeURIComponent(id), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status }),
+        });
+      } catch (e) { /* transient — the poll will reconcile */ }
+      loadApprovals();
+      loadFeed();
+    }
+
+    $("approvals").addEventListener("click", (ev) => {
+      const approveId = ev.target.getAttribute && ev.target.getAttribute("data-approve");
+      const denyId = ev.target.getAttribute && ev.target.getAttribute("data-deny");
+      if (approveId) decide(approveId, "approved");
+      else if (denyId) decide(denyId, "denied");
+    });
+
     $("send").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const text = $("text").value.trim();
@@ -76,6 +130,8 @@ export function dashboardPage(): string {
     });
 
     loadFeed();
+    loadApprovals();
+    setInterval(loadApprovals, 5000);
   </script>
 </body>
 </html>`;

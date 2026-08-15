@@ -47,11 +47,24 @@ describe("fileApprovalStore", () => {
     const store = fileApprovalStore(path);
     await store.insert(approval({ id: "a" }));
 
-    const updated = await store.setStatus("a", "approved", () => new Date("2026-08-14T01:00:00.000Z"));
+    const updated = await store.setStatus("a", "approved", { now: () => new Date("2026-08-14T01:00:00.000Z") });
     expect(updated).toMatchObject({ id: "a", status: "approved", decided_at: "2026-08-14T01:00:00.000Z" });
 
     const [reloaded] = await fileApprovalStore(path).recent(10);
     expect(reloaded).toMatchObject({ status: "approved" });
+  });
+
+  it("setStatus persists the execute result on 'executed' and the reason on 'failed'", async () => {
+    const store = fileApprovalStore(path);
+    await store.insert(approval({ id: "ok" }));
+    await store.insert(approval({ id: "bad" }));
+
+    await store.setStatus("ok", "executed", { result: { pageId: "p1" } });
+    await store.setStatus("bad", "failed", { error: "notion 400" });
+
+    const rows = await fileApprovalStore(path).recent(10);
+    expect(rows.find((r) => r.id === "ok")).toMatchObject({ status: "executed", result: { pageId: "p1" } });
+    expect(rows.find((r) => r.id === "bad")).toMatchObject({ status: "failed", error: "notion 400" });
   });
 
   it("setStatus returns undefined for an unknown id and writes nothing", async () => {

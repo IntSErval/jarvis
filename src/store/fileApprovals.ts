@@ -3,7 +3,7 @@
 // ApprovalStore port) when you want a hosted dashboard. Mirrors fileAudit.ts.
 
 import { readFile, writeFile } from "node:fs/promises";
-import type { Approval, ApprovalStore, ApprovalStatus } from "../db/approvals.js";
+import type { Approval, ApprovalStore, ApprovalStatus, SetStatusOpts } from "../db/approvals.js";
 
 export function fileApprovalStore(path: string): ApprovalStore {
   async function readAll(): Promise<Approval[]> {
@@ -24,12 +24,15 @@ export function fileApprovalStore(path: string): ApprovalStore {
       await writeFile(path, JSON.stringify(rows, null, 2), "utf8");
     },
     recent: async (limit) => (await readAll()).slice(-limit).reverse(),
-    setStatus: async (id, status: ApprovalStatus, now = () => new Date()) => {
+    setStatus: async (id, status: ApprovalStatus, opts: SetStatusOpts = {}) => {
+      const { now = () => new Date(), result, error } = opts;
       const rows = await readAll();
       const found = rows.find((r) => r.id === id);
       if (!found) return undefined;
       found.status = status;
       found.decided_at = now().toISOString();
+      if (result !== undefined) found.result = result;
+      if (error !== undefined) found.error = error;
       await writeFile(path, JSON.stringify(rows, null, 2), "utf8");
       return found;
     },

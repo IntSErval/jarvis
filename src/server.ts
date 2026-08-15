@@ -14,7 +14,8 @@ import { makeAuditLogger } from "./db/audit.js";
 import { fileAuditStore } from "./store/fileAudit.js";
 import { supabaseAuditStore } from "./store/supabaseAudit.js";
 import { fileApprovalStore } from "./store/fileApprovals.js";
-import type { ApprovalStatus, ApprovalStore } from "./db/approvals.js";
+import { executeApproval, type ApprovalStatus, type ApprovalStore, type ApprovalWriter } from "./db/approvals.js";
+import { notionWriter, type NotionWriter } from "./notion/notionWrite.js";
 import { anthropicModel } from "./model/anthropic.js";
 import { googleCalendar } from "./calendar/google.js";
 import { githubClient, type GithubClient } from "./github/github.js";
@@ -145,6 +146,15 @@ const approvals: ApprovalStore | undefined = process.env.APPROVALS_FILE
   ? fileApprovalStore(process.env.APPROVALS_FILE)
   : undefined;
 
+// Write executors, keyed by the same tool name the model parked. An approved
+// approval is dispatched here to run for real (NOTION_TOKEN reused, same auth as
+// the read client). No writer for a tool => executeApproval throws => the row is
+// flipped to "failed", never a silent no-op.
+const notionWrite: NotionWriter | undefined = NOTION_TOKEN ? notionWriter({ token: NOTION_TOKEN }) : undefined;
+const approvalWriters: Record<string, ApprovalWriter> = {
+  ...(notionWrite ? { notion_create_page: (args) => notionWrite.createPage(args) } : {}),
+};
+
 // Single deps object shared by the POST /message handler and the routine
 // scheduler, so wiring a new capability never needs updating in two places.
 const orchestratorDeps = {
@@ -263,8 +273,11 @@ const server = createServer(async (req, res) => {
     // Approval queue — only mounted when APPROVALS_FILE is wired (else 404,
     // deny-by-default). GET lists (optionally filtered by ?status=pending);
     // POST /approvals/:id decides one with { "status": "approved" | "denied" }.
-    // ponytail: deciding just flips the row's status — executing an approved
-    // write (the actual Notion call) is a later phase, not wired here yet.
+    // Approving runs the parked write for real (via approvalWriters) and flips the
+    // row to executed|failed; denying just records the decision.
+    // ponytail: no idempotency guard — a double-submitted approve re-runs the
+    // write (e.g. duplicate Notion page). Add a pending-only check (needs a
+    // getById on the store) if the UI can double-fire.
     if (approvals && req.method === "GET" && url.pathname === "/approvals") {
       const limit = Number(url.searchParams.get("limit") ?? 50);
       const rows = await approvals.recent(Number.isFinite(limit) ? limit : 50);
@@ -280,7 +293,34 @@ const server = createServer(async (req, res) => {
       }
       const updated = await approvals.setStatus(id, status);
       if (!updated) return send(res, 404, { error: "no approval with that id" });
-      return send(res, 200, { row: updated });
+      if (status === "denied") return send(res, 200, { row: updated });
+
+      // Approved: run the real write, then record executed|failed. The write's
+      // result/error is audited the same way a model-driven tool call would be.
+      try {
+        const result = await executeApproval(updated, approvalWriters);
+        const done = (await approvals.setStatus(id, "executed", { result })) ?? updated;
+        await logAudit({
+          channel: updated.channel,
+          user_msg: `approve ${updated.tool}`,
+          response: "executed",
+          tool_calls: [{ name: updated.tool, args: updated.args, result }],
+          status: "ok",
+        });
+        return send(res, 200, { row: done });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const failed = (await approvals.setStatus(id, "failed", { error: msg })) ?? updated;
+        await logAudit({
+          channel: updated.channel,
+          user_msg: `approve ${updated.tool}`,
+          response: "failed",
+          tool_calls: [{ name: updated.tool, args: updated.args, error: msg }],
+          status: "error",
+          error: msg,
+        });
+        return send(res, 200, { row: failed });
+      }
     }
 
     // WhatsApp webhook — only mounted when creds are wired (else falls through

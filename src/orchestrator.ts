@@ -133,6 +133,27 @@ async function rememberExchange(deps: OrchestratorDeps, input: OrchestratorInput
   }
 }
 
+// ponytail: recall is best-effort — a down/slow memory store must never block
+// or break the turn. Swallow failures here; the loop proceeds with just the
+// user's message.
+async function injectRecalledMemories(
+  deps: OrchestratorDeps,
+  input: OrchestratorInput,
+  messages: Message[],
+): Promise<void> {
+  if (!deps.memory) return;
+  try {
+    const hits = await deps.memory.recall(input.text);
+    if (hits.length === 0) return;
+    const content = `Relevant memories from earlier conversations (use if helpful):\n${hits
+      .map((h) => "- " + h.content)
+      .join("\n")}`;
+    messages.unshift({ role: "user", content });
+  } catch {
+    // best-effort — ignore
+  }
+}
+
 /** Build the tool name -> handler map from whichever read-only clients are wired.
  *  Adding a capability is a new adapter here + server.ts wiring — not loop surgery. */
 function buildDispatch(deps: OrchestratorDeps): Map<string, (args: unknown) => Promise<unknown>> {
@@ -189,6 +210,7 @@ export async function runOrchestrator(
   const permitted = [...dispatch.keys(), ...(deps.approvals ? WRITE_TOOL_NAMES : [])];
   const gate = deps.gate ?? allowlistGate(permitted);
   const messages: Message[] = [{ role: "user", content: input.text }];
+  await injectRecalledMemories(deps, input, messages);
   const toolCalls: ToolCallRecord[] = [];
 
   const finish = (response: string, status: "ok" | "error", error?: string) =>

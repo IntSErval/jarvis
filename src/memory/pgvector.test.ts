@@ -104,3 +104,55 @@ describe("pgvectorMemory.recall", () => {
     await expect(store.recall("hello?")).rejects.toThrow(/memory/i);
   });
 });
+
+describe("pgvectorMemory.scan", () => {
+  const rows = [
+    { content: "a", embedding: [0.1, 0.2], metadata: { channel: "web" }, created_at: "2026-08-17T00:00:00Z" },
+  ];
+
+  it("GETs recent memories with embeddings, newest first, and returns the rows", async () => {
+    const fetchFn = okFetch(rows);
+    const store = pgvectorMemory({ url: URL, serviceKey: KEY, embed: fakeEmbedder, fetchFn });
+
+    const out = await store.scan(50);
+
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchFn.mock.calls[0]!;
+    expect(String(url)).toBe(
+      `${URL}/rest/v1/memories?select=content,embedding,metadata,created_at&order=created_at.desc&limit=50`,
+    );
+    // GET (no explicit method, or "GET") — never a write.
+    expect(init?.method ?? "GET").toBe("GET");
+    const headers = init!.headers as Record<string, string>;
+    expect(headers.apikey).toBe(KEY);
+    expect(headers.Authorization).toBe(`Bearer ${KEY}`);
+    expect(out).toEqual(rows);
+  });
+
+  it("defaults to a bounded limit of 200 when none is given", async () => {
+    const fetchFn = okFetch([]);
+    const store = pgvectorMemory({ url: URL, serviceKey: KEY, embed: fakeEmbedder, fetchFn });
+
+    await store.scan();
+
+    const [url] = fetchFn.mock.calls[0]!;
+    expect(String(url)).toContain("limit=200");
+  });
+
+  it("does not embed anything (scan is not a query)", async () => {
+    const embed = vi.fn(async () => [0.1]);
+    const fetchFn = okFetch([]);
+    const store = pgvectorMemory({ url: URL, serviceKey: KEY, embed: { embed }, fetchFn });
+
+    await store.scan();
+
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it("throws an error containing 'memory' when Supabase returns non-2xx", async () => {
+    const fetchFn = vi.fn(async () => new Response("nope", { status: 500 }));
+    const store = pgvectorMemory({ url: URL, serviceKey: KEY, embed: fakeEmbedder, fetchFn });
+
+    await expect(store.scan()).rejects.toThrow(/memory/i);
+  });
+});

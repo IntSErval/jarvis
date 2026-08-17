@@ -47,5 +47,14 @@ export function pgvectorMemory(config: Config): MemoryStore {
       if (!res.ok) throw new Error(`memory recall failed: ${res.status} ${await res.text()}`);
       return res.json();
     },
+    // ponytail: bounded scan (default 200 newest) — a full-table dump would grow
+    // unbounded. Raise the cap or page if the dreamer ever needs more than the
+    // recent window for density scoring.
+    scan: async (limit = 200) => {
+      const query = `select=content,embedding,metadata,created_at&order=created_at.desc&limit=${limit}`;
+      const res = await fetchFn(`${url}/rest/v1/memories?${query}`, { headers });
+      if (!res.ok) throw new Error(`memory scan failed: ${res.status} ${await res.text()}`);
+      return res.json();
+    },
   };
 }

@@ -201,7 +201,7 @@ describe("runOrchestrator", () => {
         { toolCalls: [{ id: "s1", name: "memory_search", args: { query: "rag decision", k: 5 } }], text: "" },
         { toolCalls: [], text: "We chose recall-as-a-tool." },
       ]),
-      memory: { recall, remember: async () => {} },
+      memory: { recall, remember: async () => {}, scan: async () => [] },
     });
 
     const out = await runOrchestrator({ text: "what did we decide about rag?", channel: "web" }, deps);
@@ -352,7 +352,7 @@ describe("runOrchestrator", () => {
     const remember = vi.fn(async (_record: MemoryRecord) => {});
     const { audits, deps } = harness({
       model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
-      memory: { recall: async () => [], remember },
+      memory: { recall: async () => [], remember, scan: async () => [] },
     });
 
     const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
@@ -372,7 +372,7 @@ describe("runOrchestrator", () => {
     });
     const { audits, deps } = harness({
       model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
-      memory: { recall: async () => [], remember },
+      memory: { recall: async () => [], remember, scan: async () => [] },
     });
 
     const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
@@ -405,7 +405,7 @@ describe("runOrchestrator", () => {
     };
     const { deps } = harness({
       model,
-      memory: { recall, remember: async () => {} },
+      memory: { recall, remember: async () => {}, scan: async () => [] },
     });
 
     const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
@@ -428,7 +428,7 @@ describe("runOrchestrator", () => {
     };
     const { deps } = harness({
       model,
-      memory: { recall, remember: async () => {} },
+      memory: { recall, remember: async () => {}, scan: async () => [] },
     });
 
     await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
@@ -442,7 +442,7 @@ describe("runOrchestrator", () => {
     });
     const { audits, deps } = harness({
       model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
-      memory: { recall, remember: async () => {} },
+      memory: { recall, remember: async () => {}, scan: async () => [] },
     });
 
     const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);

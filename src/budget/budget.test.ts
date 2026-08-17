@@ -22,10 +22,10 @@ function fakeStore(seed: SpendRecord[] = []): BudgetStore {
 
 describe("costUsd", () => {
   // Prices per-million tokens, from the claude-api skill (input/output):
-  // opus-4-8 $5/$25, sonnet-5 $3/$15, haiku-4-5 $1/$5.
+  // opus-4-8 $5/$25, sonnet-5 $2/$10, haiku-4-5 $1/$5.
   it("prices a full 1M in + 1M out call for each known model", () => {
     expect(costUsd("claude-opus-4-8", 1_000_000, 1_000_000)).toBeCloseTo(30, 6);
-    expect(costUsd("claude-sonnet-5", 1_000_000, 1_000_000)).toBeCloseTo(18, 6);
+    expect(costUsd("claude-sonnet-5", 1_000_000, 1_000_000)).toBeCloseTo(12, 6);
     expect(costUsd("claude-haiku-4-5", 1_000_000, 1_000_000)).toBeCloseTo(6, 6);
   });
 

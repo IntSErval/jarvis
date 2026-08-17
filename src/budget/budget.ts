@@ -9,17 +9,17 @@ interface Price {
   out: number;
 }
 
-// ponytail: prices as of the claude-api skill snapshot (2026-06-24). Sonnet 5
-// has a lower intro price through 2026-08-31; we bill the durable standard
-// rate so the meter doesn't silently under-report once intro pricing ends.
+// ponytail: prices from the claude-api skill (live pricing authoritative).
+// Sonnet 5's $2/$10 is the durable standard rate — the scheduled increase to
+// $3/$15 was cancelled, so $2/$10 is not an intro rate.
 const PRICING: Record<string, Price> = {
   "claude-opus-4-8": { in: 5, out: 25 },
-  "claude-sonnet-5": { in: 3, out: 15 },
+  "claude-sonnet-5": { in: 2, out: 10 },
   "claude-haiku-4-5": { in: 1, out: 5 },
 };
 
-// ponytail: unknown models fall back to Sonnet pricing — a sane mid-tier
-// default so a new model id meters non-zero instead of free.
+// ponytail: unknown models fall back to Sonnet's standard $2/$10 — a sane
+// mid-tier default so a new model id meters non-zero instead of free.
 const FALLBACK: Price = PRICING["claude-sonnet-5"]!;
 
 /** USD cost of one model call. Input/output tokens priced separately. */

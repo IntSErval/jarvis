@@ -346,6 +346,51 @@ describe("runOrchestrator", () => {
     expect(out).toMatch(/sorry|couldn't|error/i);
   });
 
+  it("remembers a successful exchange when a memory store is wired", async () => {
+    const remember = vi.fn(async () => {});
+    const { audits, deps } = harness({
+      model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
+      memory: { recall: async () => [], remember },
+    });
+
+    const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
+
+    expect(out).toBe("It's sunny.");
+    expect(remember).toHaveBeenCalledTimes(1);
+    const record = remember.mock.calls[0]![0];
+    expect(record.content).toContain("how's the weather");
+    expect(record.content).toContain("It's sunny.");
+    expect(record.metadata).toMatchObject({ channel: "web" });
+    expect(audits[0]!.status).toBe("ok");
+  });
+
+  it("does not fail the reply or change audit status when remember() rejects (best-effort)", async () => {
+    const remember = vi.fn(async () => {
+      throw new Error("memory store down");
+    });
+    const { audits, deps } = harness({
+      model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
+      memory: { recall: async () => [], remember },
+    });
+
+    const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
+
+    expect(out).toBe("It's sunny.");
+    expect(audits[0]!.status).toBe("ok");
+    expect(audits[0]!.error).toBeUndefined();
+  });
+
+  it("does not crash and returns the reply as before when no memory store is wired", async () => {
+    const { audits, deps } = harness({
+      model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
+    });
+
+    const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
+
+    expect(out).toBe("It's sunny.");
+    expect(audits[0]!.status).toBe("ok");
+  });
+
   it("stops at the max-hop limit instead of looping forever", async () => {
     const listEvents = vi.fn(async () => []);
     const alwaysTool: ModelClient = {

@@ -1,6 +1,7 @@
 // Memory ports — Jarvis's own semantic memory substrate (PRD 5.3). Interfaces
-// only; adapters (pgvector.ts, localEmbedder.ts) implement these. Not wired
-// into the orchestrator loop yet — RAG-into-the-loop is a separate decision.
+// only; adapters (pgvector.ts, localEmbedder.ts) implement these. Wired into the
+// orchestrator loop: exchanges are auto-remembered and recalled memories are
+// proactively injected before each model turn (see orchestrator.ts).
 
 /** Embeds text into a fixed-length vector. Injected so the store is provider-agnostic. */
 export interface Embedder {

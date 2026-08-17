@@ -145,6 +145,9 @@ async function injectRecalledMemories(
   try {
     const hits = await deps.memory.recall(input.text);
     if (hits.length === 0) return;
+    // ponytail: no truncation — recall defaults to k=8 hits of arbitrary stored
+    // length, all concatenated into one injected message. Fine at current scale;
+    // cap per-item length (or k) here if memory content ever bloats the prompt.
     const content = `Relevant memories from earlier conversations (use if helpful):\n${hits
       .map((h) => "- " + h.content)
       .join("\n")}`;

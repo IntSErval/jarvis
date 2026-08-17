@@ -30,6 +30,7 @@ export function dashboardPage(): string {
   <form id="send">
     <input id="text" placeholder="Ask Jarvis…" autocomplete="off" autofocus />
     <button type="submit">Send</button>
+    <button id="mic" type="button" title="Speak">🎤</button>
   </form>
   <div id="reply"></div>
   <h1>Approvals</h1>
@@ -109,10 +110,29 @@ export function dashboardPage(): string {
       else if (denyId) decide(denyId, "denied");
     });
 
+    // Voice (Task B1): browser-native STT via Web Speech API, TTS via
+    // speechSynthesis. No server involvement — the mic just fills #text and
+    // submits through the existing handler below; voiceQuery marks the reply
+    // for read-aloud so typed queries stay silent.
+    let voiceQuery = false;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const mic = $("mic");
+    if (!SR) {
+      mic.hidden = true;
+    } else {
+      const recognition = new SR();
+      recognition.onresult = (ev) => {
+        $("text").value = ev.results[0][0].transcript;
+        voiceQuery = true;
+        $("send").requestSubmit();
+      };
+      mic.addEventListener("click", () => recognition.start());
+    }
+
     $("send").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const text = $("text").value.trim();
-      if (!text) return;
+      if (!text) { voiceQuery = false; return; }
       $("reply").textContent = "…";
       try {
         const res = await fetch("/message", {
@@ -121,11 +141,17 @@ export function dashboardPage(): string {
           body: JSON.stringify({ text, channel: "web" }),
         });
         const data = await res.json();
-        $("reply").textContent = data.reply ?? data.error ?? "(no reply)";
+        const reply = data.reply ?? data.error ?? "(no reply)";
+        $("reply").textContent = reply;
         $("text").value = "";
+        if (voiceQuery && window.speechSynthesis) {
+          speechSynthesis.speak(new SpeechSynthesisUtterance(reply));
+        }
         loadFeed();
       } catch (e) {
         $("reply").textContent = "request failed";
+      } finally {
+        voiceQuery = false;
       }
     });
 

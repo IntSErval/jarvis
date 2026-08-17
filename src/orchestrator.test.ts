@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   runOrchestrator,
   type CalendarClient,
+  type Message,
   type ModelClient,
   type ModelTurn,
   type OrchestratorDeps,
@@ -384,6 +385,64 @@ describe("runOrchestrator", () => {
   it("does not crash and returns the reply as before when no memory store is wired", async () => {
     const { audits, deps } = harness({
       model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
+    });
+
+    const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
+
+    expect(out).toBe("It's sunny.");
+    expect(audits[0]!.status).toBe("ok");
+  });
+
+  it("proactively recalls memories and injects them before the user message", async () => {
+    const hits = [{ content: "user prefers metric units", metadata: {}, similarity: 0.9 }];
+    const recall = vi.fn(async () => hits);
+    let seenMessages: Message[] = [];
+    const model: ModelClient = {
+      turn: async (messages) => {
+        seenMessages = messages;
+        return { toolCalls: [], text: "It's 20C." };
+      },
+    };
+    const { deps } = harness({
+      model,
+      memory: { recall, remember: async () => {} },
+    });
+
+    const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
+
+    expect(out).toBe("It's 20C.");
+    expect(recall).toHaveBeenCalledWith("how's the weather");
+    expect(seenMessages.length).toBe(2);
+    expect(seenMessages[0]!.content).toContain("user prefers metric units");
+    expect(seenMessages[1]).toEqual({ role: "user", content: "how's the weather" });
+  });
+
+  it("injects no context message when recall returns no hits", async () => {
+    const recall = vi.fn(async () => []);
+    let seenMessages: Message[] = [];
+    const model: ModelClient = {
+      turn: async (messages) => {
+        seenMessages = messages;
+        return { toolCalls: [], text: "ok" };
+      },
+    };
+    const { deps } = harness({
+      model,
+      memory: { recall, remember: async () => {} },
+    });
+
+    await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);
+
+    expect(seenMessages).toEqual([{ role: "user", content: "how's the weather" }]);
+  });
+
+  it("does not fail the loop when recall() rejects (best-effort)", async () => {
+    const recall = vi.fn(async () => {
+      throw new Error("vector store down");
+    });
+    const { audits, deps } = harness({
+      model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
+      memory: { recall, remember: async () => {} },
     });
 
     const out = await runOrchestrator({ text: "how's the weather", channel: "web" }, deps);

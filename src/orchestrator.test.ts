@@ -8,6 +8,7 @@ import {
 } from "./orchestrator.js";
 import type { AuditInput } from "./db/audit.js";
 import type { Approval, ApprovalStore } from "./db/approvals.js";
+import type { MemoryRecord } from "./memory/store.js";
 import { allowlistGate } from "./gate.js";
 
 /** In-memory approval store that captures parked rows. */
@@ -347,7 +348,7 @@ describe("runOrchestrator", () => {
   });
 
   it("remembers a successful exchange when a memory store is wired", async () => {
-    const remember = vi.fn(async () => {});
+    const remember = vi.fn(async (_record: MemoryRecord) => {});
     const { audits, deps } = harness({
       model: scriptedModel([{ toolCalls: [], text: "It's sunny." }]),
       memory: { recall: async () => [], remember },

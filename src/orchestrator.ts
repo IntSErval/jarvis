@@ -119,6 +119,20 @@ export const MEMORY_TOOLS: ToolSpec[] = [
 
 const GRACEFUL = "Sorry, I couldn't complete that — I hit an error.";
 
+// ponytail: memory is best-effort — a down/slow memory store must never break
+// the reply or flip the audit status. Swallow failures here.
+async function rememberExchange(deps: OrchestratorDeps, input: OrchestratorInput, response: string): Promise<void> {
+  if (!deps.memory) return;
+  try {
+    await deps.memory.remember({
+      content: `User: ${input.text}\nJarvis: ${response}`,
+      metadata: { channel: input.channel, ts: new Date().toISOString() },
+    });
+  } catch {
+    // best-effort — ignore
+  }
+}
+
 /** Build the tool name -> handler map from whichever read-only clients are wired.
  *  Adding a capability is a new adapter here + server.ts wiring — not loop surgery. */
 function buildDispatch(deps: OrchestratorDeps): Map<string, (args: unknown) => Promise<unknown>> {
@@ -186,7 +200,9 @@ export async function runOrchestrator(
       const turn = await model.turn(messages, tools);
 
       if (turn.toolCalls.length === 0) {
-        return await finish(turn.text, "ok");
+        const response = await finish(turn.text, "ok");
+        await rememberExchange(deps, input, response);
+        return response;
       }
 
       for (const call of turn.toolCalls) {

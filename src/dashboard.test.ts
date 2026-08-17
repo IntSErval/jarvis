@@ -55,5 +55,9 @@ describe("dashboardPage", () => {
     it("hides the mic button when speech recognition is unsupported", () => {
       expect(html).toMatch(/mic\.hidden\s*=\s*true/);
     });
+
+    it("only speaks replies to voice-initiated queries", () => {
+      expect(html).toMatch(/voiceQuery\s*&&\s*window\.speechSynthesis/);
+    });
   });
 });

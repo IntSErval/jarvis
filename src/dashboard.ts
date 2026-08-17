@@ -126,7 +126,10 @@ export function dashboardPage(): string {
         voiceQuery = true;
         $("send").requestSubmit();
       };
-      mic.addEventListener("click", () => recognition.start());
+      // ponytail: try/catch swallows the InvalidStateError from double-clicking
+      // while already listening — no permission/no-speech error UI, silent fail
+      // is the ceiling; add onerror UX if users report confusion.
+      mic.addEventListener("click", () => { try { recognition.start(); } catch (e) {} });
     }
 
     $("send").addEventListener("submit", async (ev) => {

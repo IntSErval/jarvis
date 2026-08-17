@@ -57,7 +57,10 @@ describe("dashboardPage", () => {
     });
 
     it("only speaks replies to voice-initiated queries", () => {
-      expect(html).toMatch(/voiceQuery\s*&&\s*window\.speechSynthesis/);
+      // Snapshot of the voice flag, taken up front so a concurrent typed submit
+      // can't inherit read-aloud; the speak call is gated by that snapshot.
+      expect(html).toMatch(/const speakReply = voiceQuery/);
+      expect(html).toMatch(/speakReply\s*&&\s*window\.speechSynthesis/);
     });
   });
 });

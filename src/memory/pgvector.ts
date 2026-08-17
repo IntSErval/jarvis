@@ -1,7 +1,8 @@
 // Hosted MemoryStore backed by Supabase (PostgREST) + pgvector. Same fetch
 // idiom as supabaseAudit.ts: no @supabase/supabase-js dependency, no native
 // build step. Requires the `memories` table + match_memories() function (see
-// db/memory.sql). NOT wired into the orchestrator loop — tested infra only.
+// db/memory.sql). Wired into the orchestrator loop (auto-remember + proactive
+// recall) when Supabase creds are present; absent creds => memory stays off.
 
 import type { Embedder, MemoryStore } from "./store.js";
 

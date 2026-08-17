@@ -134,8 +134,12 @@ export function dashboardPage(): string {
 
     $("send").addEventListener("submit", async (ev) => {
       ev.preventDefault();
+      // Snapshot + clear the voice flag up front so a typed submit that lands
+      // while a voice request is still in flight can't inherit its read-aloud.
+      const speakReply = voiceQuery;
+      voiceQuery = false;
       const text = $("text").value.trim();
-      if (!text) { voiceQuery = false; return; }
+      if (!text) return;
       $("reply").textContent = "…";
       try {
         const res = await fetch("/message", {
@@ -147,14 +151,12 @@ export function dashboardPage(): string {
         const reply = data.reply ?? data.error ?? "(no reply)";
         $("reply").textContent = reply;
         $("text").value = "";
-        if (voiceQuery && window.speechSynthesis) {
+        if (speakReply && window.speechSynthesis) {
           speechSynthesis.speak(new SpeechSynthesisUtterance(reply));
         }
         loadFeed();
       } catch (e) {
         $("reply").textContent = "request failed";
-      } finally {
-        voiceQuery = false;
       }
     });
 

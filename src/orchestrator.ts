@@ -136,6 +136,9 @@ async function rememberExchange(deps: OrchestratorDeps, input: OrchestratorInput
 // ponytail: recall is best-effort — a down/slow memory store must never block
 // or break the turn. Swallow failures here; the loop proceeds with just the
 // user's message.
+// ponytail: plain fetch with no timeout (same as every other adapter). Recall
+// and remember now run on every turn once memory is wired, so a *hung* Supabase
+// call would stall the reply — add an AbortController here if that ever bites.
 async function injectRecalledMemories(
   deps: OrchestratorDeps,
   input: OrchestratorInput,

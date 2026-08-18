@@ -93,7 +93,10 @@ export async function runDreamer(deps: DreamerDeps): Promise<DreamEntry[]> {
 
     const scanned = await memory.scan();
     const chosen = sampleSeeds(scanned, seeds, now?.());
-    if (chosen.length === 0) return [];
+    if (chosen.length === 0) {
+      await audit({ response: "skipped: no seeds", status: "ok" });
+      return [];
+    }
     const seedTexts = chosen.map((m) => m.content);
 
     // Fan out N independent proposals, then one judge/synthesis pass.

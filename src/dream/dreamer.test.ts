@@ -138,4 +138,21 @@ describe("runDreamer", () => {
     expect(dreams.inserted).toHaveLength(0);
     expect(audits.some((a) => a.status === "error")).toBe(true);
   });
+
+  it("audits when sampling produces no seeds", async () => {
+    const scripted = scriptedModel([candidates(3)]);
+    const audits: AuditInput[] = [];
+    const out = await runDreamer(
+      baseDeps({
+        memory: memoryWith([]),
+        model: scripted.model,
+        logAudit: async (a) => void audits.push(a),
+      }),
+    );
+    expect(out).toEqual([]);
+    expect(scripted.calls.length).toBe(0);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.response).toBe("skipped: no seeds");
+    expect(audits[0]!.status).toBe("ok");
+  });
 });

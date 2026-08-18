@@ -30,8 +30,8 @@ export function dashboardPage(): string {
   <form id="send">
     <input id="text" placeholder="Ask Jarvis…" autocomplete="off" autofocus />
     <button type="submit">Send</button>
-    <button id="mic" type="button" title="Speak">🎤</button>
   </form>
+  <div id="mic" title="Say &quot;ADAM&quot; then your command">🎤 starting…</div>
   <div id="reply"></div>
   <h1>Approvals</h1>
   <div id="approvals">loading…</div>
@@ -110,26 +110,76 @@ export function dashboardPage(): string {
       else if (denyId) decide(denyId, "denied");
     });
 
-    // Voice (Task B1): browser-native STT via Web Speech API, TTS via
-    // speechSynthesis. No server involvement — the mic just fills #text and
-    // submits through the existing handler below; voiceQuery marks the reply
-    // for read-aloud so typed queries stay silent.
+    // Voice (hands-free "ADAM"): always-on browser STT via Web Speech API, TTS
+    // via speechSynthesis shaped toward a deep Adam-Smasher timbre. No server
+    // round-trip for audio — recognition hears the "ADAM" wake word, fills #text
+    // with the command after it, and submits through the handler below. voiceQuery
+    // marks the reply for read-aloud so typed queries stay silent.
+    const WAKE = "adam";
     let voiceQuery = false;
+    let speaking = false;   // true while Jarvis is talking — pauses the mic
+    let recognition = null;
+    let listening = false;
+    let micBlocked = false; // a denied mic is terminal — stop retrying
+
+    function startListening() {
+      // Hands-free: no button. Guarded so we never double-start, listen while
+      // speaking, or spin after a denied mic. try/catch swallows the
+      // InvalidStateError of start()-ing twice.
+      if (!recognition || listening || speaking || micBlocked) return;
+      try { recognition.start(); } catch (e) {}
+    }
+
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const mic = $("mic");
     if (!SR) {
       mic.hidden = true;
     } else {
-      const recognition = new SR();
+      recognition = new SR();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.onstart = () => { listening = true; mic.textContent = '🔴 Listening for "ADAM"…'; };
+      // Chrome drops continuous recognition after silence; restart to stay
+      // hands-free, unless we deliberately stopped it to speak (guarded below).
+      recognition.onend = () => { listening = false; if (!speaking) startListening(); };
+      recognition.onerror = (e) => {
+        listening = false;
+        if (e && (e.error === "not-allowed" || e.error === "service-not-allowed")) {
+          micBlocked = true;   // else onend/startListening spin forever
+          mic.textContent = "🔇 mic blocked — allow it and reload";
+        }
+      };
       recognition.onresult = (ev) => {
-        $("text").value = ev.results[0][0].transcript;
+        const heard = ev.results[ev.results.length - 1][0].transcript.toLowerCase();
+        const at = heard.indexOf(WAKE);
+        if (at === -1) return;                               // no wake word — ignore
+        const command = heard.slice(at + WAKE.length).replace(/^[,\\s]+/, "").trim();
+        if (!command) return;                                // "ADAM" alone — wait
+        mic.textContent = "💬 " + command;
+        $("text").value = command;
         voiceQuery = true;
         $("send").requestSubmit();
       };
-      // ponytail: try/catch swallows the InvalidStateError from double-clicking
-      // while already listening — no permission/no-speech error UI, silent fail
-      // is the ceiling; add onerror UX if users report confusion.
-      mic.addEventListener("click", () => { try { recognition.start(); } catch (e) {} });
+      startListening();   // browser prompts for mic once; every later visit is silent
+    }
+
+    // Adam Smasher on a $0 budget: deepest available voice, floor the pitch, slow
+    // the rate. Stop the mic while speaking so it doesn't transcribe Jarvis itself.
+    // ponytail: speechSynthesis can't be routed through Web Audio for real
+    // distortion/vocoder grit in-browser — that's the ceiling; upgrade path is the
+    // deferred env-gated ElevenLabs voice-clone adapter (ports & adapters).
+    function speak(text) {
+      const u = new SpeechSynthesisUtterance(text);
+      const vs = speechSynthesis.getVoices();
+      const v = vs.find((x) => /\\b(male|daniel|david|rishi)\\b/i.test(x.name))
+             || vs.find((x) => /en[-_]?gb/i.test(x.lang)) || vs[0];
+      if (v) u.voice = v;
+      u.pitch = 0.1;    // floor — deepest the API allows
+      u.rate = 0.85;    // heavier, slower cadence
+      speaking = true;
+      try { recognition && recognition.stop(); } catch (e) {}
+      u.onend = () => { speaking = false; startListening(); };
+      speechSynthesis.speak(u);
     }
 
     $("send").addEventListener("submit", async (ev) => {
@@ -152,7 +202,7 @@ export function dashboardPage(): string {
         $("reply").textContent = reply;
         $("text").value = "";
         if (speakReply && window.speechSynthesis) {
-          speechSynthesis.speak(new SpeechSynthesisUtterance(reply));
+          speak(reply);
         }
         loadFeed();
       } catch (e) {

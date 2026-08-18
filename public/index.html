@@ -428,6 +428,7 @@ class Component extends DCLogic {
     t: 0, clock: '', spend: 4.18, mSpend: 62.4, uptimeS: 1502720,
     lat: [], err: [], q_: [], mem: [], tok: [],
     utter: 0, hover: null,
+    liveReply: '', liveMeta: '', voiceState: '',   // hands-free "ADAM" voice
     dreams: [
       {id:'d1',cat:'CONNECTION',conf:0.81,text:'Your "context rot" note and the Q3 retro both blame the same thing — you keep re-reading state instead of storing it. Same problem, two years apart.',notes:['context-rot.md','retro-2025-q3.md','agentic-hub/README.md'],state:''},
       {id:'d2',cat:'CONTRADICTION',conf:0.74,text:'You wrote that the swarm is deferred until a capability wall. Then you spent Tuesday sketching four agent roles. Pick one.',notes:['jarvis-prd.md','scratch/2026-08-04.md'],state:''},
@@ -548,6 +549,8 @@ class Component extends DCLogic {
     // Live approval queue — replaces the demo seed with real parked writes.
     this.loadApprovals();
     this.apprT = setInterval(() => this.loadApprovals(), 5000);
+    // Hands-free "ADAM" voice — always-on mic + live /message loop.
+    this.initVoice();
   }
   componentDidUpdate(pp, ps) {
     if (this.props.accent !== pp.accent) this.applyAccent();
@@ -556,6 +559,7 @@ class Component extends DCLogic {
   }
   componentWillUnmount() {
     clearInterval(this.tick); clearInterval(this.utterT); clearInterval(this.apprT);
+    this.stopVoice();
     window.removeEventListener('keydown', this.onKey);
     cancelAnimationFrame(this.raf); cancelAnimationFrame(this.graf);
   }
@@ -603,6 +607,87 @@ class Component extends DCLogic {
     if (s < 3600) return Math.floor(s / 60) + 'm';
     if (s < 86400) return Math.floor(s / 3600) + 'h';
     return Math.floor(s / 86400) + 'd';
+  }
+
+  // --- Hands-free "ADAM" voice ---
+  // Hand-wired on top of the generated comp (reapply if this mockup is ever
+  // regenerated). Always-on browser STT: hear "ADAM <command>", POST it to the
+  // live /message loop, show the reply in the JARVIS panel (renderVals prefers
+  // liveReply over the canned utterance) and speak it in a deep Smasher-ish
+  // voice. The mic pauses while speaking so it never transcribes Jarvis itself.
+  // ponytail: speechSynthesis can't be routed through Web Audio for real
+  // vocoder grit in-browser — that's the ceiling; upgrade path is the deferred
+  // env-gated ElevenLabs voice-clone adapter.
+  initVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    this.speaking = false;
+    this.listening = false;
+    this.micBlocked = false;
+    const rec = new SR();
+    this.recognition = rec;
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.onstart = () => { this.listening = true; this.setState({voiceState: 'LISTENING'}); };
+    // Chrome drops continuous recognition after silence; restart to stay
+    // hands-free unless we deliberately stopped it to speak.
+    rec.onend = () => { this.listening = false; if (!this.speaking) this.startListening(); };
+    // A denied mic is terminal — stop retrying, or onend/startListening spin.
+    rec.onerror = (e) => {
+      this.listening = false;
+      if (e && (e.error === 'not-allowed' || e.error === 'service-not-allowed')) {
+        this.micBlocked = true;
+        this.setState({voiceState: 'MIC BLOCKED'});
+      }
+    };
+    rec.onresult = (ev) => {
+      const heard = ev.results[ev.results.length - 1][0].transcript.toLowerCase();
+      const at = heard.indexOf('adam');
+      if (at === -1) return;                                 // no wake word — ignore
+      const command = heard.slice(at + 4).replace(/^[,\s]+/, '').trim();
+      if (!command) return;                                  // "ADAM" alone — wait
+      this.setState({voiceState: 'HEARD'});
+      this.sendMessage(command);
+    };
+    this.startListening();   // browser prompts for the mic once; later visits are silent
+  }
+  startListening() {
+    if (!this.recognition || this.listening || this.speaking || this.micBlocked) return;
+    try { this.recognition.start(); } catch (e) {}
+  }
+  async sendMessage(text) {
+    try {
+      const res = await fetch('/message', {
+        method: 'POST', headers: {'content-type': 'application/json'},
+        body: JSON.stringify({text, channel: 'web'})
+      });
+      const data = await res.json();
+      const reply = data.reply ?? data.error ?? '(no reply)';
+      this.setState({liveReply: reply, liveMeta: 'VOICE · ' + text.toUpperCase()});
+      this.speak(reply);
+    } catch (e) {
+      this.setState({liveReply: 'request failed', liveMeta: 'VOICE · ERROR', voiceState: ''});
+      this.startListening();
+    }
+  }
+  speak(text) {
+    if (!window.speechSynthesis) { this.setState({voiceState: ''}); this.startListening(); return; }
+    const u = new SpeechSynthesisUtterance(text);
+    const vs = speechSynthesis.getVoices();
+    const v = vs.find(x => /\b(male|daniel|david|rishi)\b/i.test(x.name))
+           || vs.find(x => /en[-_]?gb/i.test(x.lang)) || vs[0];
+    if (v) u.voice = v;
+    u.pitch = 0.1;    // floor — deepest the API allows
+    u.rate = 0.85;    // heavier, slower cadence
+    this.speaking = true;
+    this.setState({voiceState: 'SPEAKING'});
+    try { this.recognition && this.recognition.stop(); } catch (e) {}
+    u.onend = () => { this.speaking = false; this.setState({voiceState: ''}); this.startListening(); };
+    speechSynthesis.speak(u);
+  }
+  stopVoice() {
+    try { this.recognition && this.recognition.stop(); } catch (e) {}
+    try { window.speechSynthesis && speechSynthesis.cancel(); } catch (e) {}
   }
 
   applyAccent() {
@@ -799,8 +884,11 @@ class Component extends DCLogic {
       ],
 
       nodeCount: '2,148',
-      coreState: s.t % 8 < 5 ? 'THINKING' : 'IDLE',
-      utterance: u[0], utterMeta: u[1],
+      // Live voice takes over the core-state label and the JARVIS speech panel;
+      // falls back to the ambient demo copy when idle.
+      coreState: s.voiceState || (s.t % 8 < 5 ? 'THINKING' : 'IDLE'),
+      utterance: s.liveReply || u[0],
+      utterMeta: s.liveReply ? s.liveMeta : u[1],
 
       costRows: [
         {k:'TOKENS 24H', v:'1.84M'},

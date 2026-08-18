@@ -63,4 +63,46 @@ describe("dashboardPage", () => {
       expect(html).toMatch(/speakReply\s*&&\s*window\.speechSynthesis/);
     });
   });
+
+  // ponytail: same ceiling as above — string-presence checks on the emitted
+  // script, since Web Speech can't run headless. Covers the hands-free upgrade:
+  // always-on listening, an "ADAM" wake word, a feedback guard, and a deep voice.
+  describe("hands-free ADAM (voice-only)", () => {
+    it("listens continuously instead of one-shot", () => {
+      expect(html).toMatch(/recognition\.continuous\s*=\s*true/);
+    });
+
+    it("auto-starts listening on load with no button press", () => {
+      // The mic is hands-free: recognition starts on load, and the old
+      // click-to-talk handler is gone.
+      expect(html).toContain("startListening()");
+      expect(html).not.toMatch(/mic\.addEventListener/);
+    });
+
+    it("keeps listening by restarting when recognition ends", () => {
+      // Chrome drops continuous recognition after silence; onend must restart it.
+      expect(html).toContain("recognition.onend");
+    });
+
+    it("stops retrying when the mic is denied (no tight restart loop)", () => {
+      expect(html).toContain("not-allowed");
+    });
+
+    it("gates on the ADAM wake word and takes the command after it", () => {
+      expect(html).toContain('"adam"');
+      expect(html).toContain("indexOf");
+    });
+
+    it("stops listening while speaking so it doesn't hear itself", () => {
+      // Feedback guard: a speaking flag stops recognition during TTS.
+      expect(html).toMatch(/speaking\s*=\s*true/);
+      expect(html).toContain("recognition.stop()");
+    });
+
+    it("shapes a deep Adam-Smasher voice (deepest voice, low pitch, slow rate)", () => {
+      expect(html).toContain("getVoices()");
+      expect(html).toMatch(/\.pitch\s*=\s*0\.1/);
+      expect(html).toMatch(/\.rate\s*=\s*0\.85/);
+    });
+  });
 });

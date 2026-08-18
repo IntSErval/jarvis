@@ -16,6 +16,11 @@ import { supabaseAuditStore } from "./store/supabaseAudit.js";
 import { fileApprovalStore } from "./store/fileApprovals.js";
 import { executeApproval, type ApprovalStatus, type ApprovalStore, type ApprovalWriter } from "./db/approvals.js";
 import { notionWriter, type NotionWriter } from "./notion/notionWrite.js";
+import { fileBudgetStore } from "./store/fileBudget.js";
+import { makeBudgetGuard, type BudgetCaps, type BudgetGuard } from "./budget/budget.js";
+import { fileDreamStore } from "./store/fileDreams.js";
+import { runDreamer, type DreamerDeps } from "./dream/dreamer.js";
+import type { DreamStore, DreamStatus } from "./dream/dream.js";
 import { anthropicModel } from "./model/anthropic.js";
 import { googleCalendar } from "./calendar/google.js";
 import { githubClient, type GithubClient } from "./github/github.js";
@@ -155,6 +160,51 @@ const approvalWriters: Record<string, ApprovalWriter> = {
   ...(notionWrite ? { notion_create_page: (args) => notionWrite.createPage(args) } : {}),
 };
 
+// Autonomous-run budget guard (Task B3, PRD 8): opt-in via BUDGET_FILE. Caps
+// are parsed only when the env var is set AND finite, same optional-spread
+// pattern as elsewhere. Absent BUDGET_FILE => no guard, autonomous runs
+// unbounded (deny-by-default doesn't apply here — this is a spend cap, not a
+// capability gate).
+// ponytail: nothing calls budget.record() yet — ModelTurn carries no token
+// usage, so real spend metering needs orchestrator surgery (out of scope for
+// this task). The guard's check() only reads past spend from the store; until
+// a future task wires record() to actual model calls, the daily/monthly caps
+// never accumulate and check() always allows. Don't mistake this for live
+// enforcement.
+const dailyUsd = process.env.BUDGET_DAILY_USD ? parseFloat(process.env.BUDGET_DAILY_USD) : undefined;
+const monthlyUsd = process.env.BUDGET_MONTHLY_USD ? parseFloat(process.env.BUDGET_MONTHLY_USD) : undefined;
+const budgetCaps: BudgetCaps = {
+  ...(dailyUsd !== undefined && Number.isFinite(dailyUsd) ? { dailyUsd } : {}),
+  ...(monthlyUsd !== undefined && Number.isFinite(monthlyUsd) ? { monthlyUsd } : {}),
+};
+const budget: BudgetGuard | undefined = process.env.BUDGET_FILE
+  ? makeBudgetGuard(fileBudgetStore(process.env.BUDGET_FILE), budgetCaps)
+  : undefined;
+
+// Dream journal (Task D5, PRD 5.4): opt-in via DREAMS_FILE. Absent =>
+// /dreams routes 404 and no nightly pass runs (deny-by-default, $0 with no
+// creds).
+const dreams: DreamStore | undefined = process.env.DREAMS_FILE ? fileDreamStore(process.env.DREAMS_FILE) : undefined;
+
+// The dreamer scans memory for seeds, so the actual pipeline (manual trigger +
+// nightly scheduler) is only live when both DREAMS_FILE and memory (Supabase)
+// are wired; the journal GET/POST endpoints stay available off `dreams` alone
+// so a human can still browse/decide any dreams already parked.
+const dreamerDeps: DreamerDeps | undefined =
+  dreams && memory ? { memory, model, dreams, logAudit, ...(budget ? { budget } : {}) } : undefined;
+
+// Nightly dreaming pass: opt-in via DREAMS_FILE + memory. runDreamer never
+// throws (best-effort, audits internally).
+// ponytail: one in-process 24h interval tick, no real cron/at-3am scheduling —
+// fine for a single user. Swap for an actual scheduled time if a specific
+// nightly hour ever matters.
+if (dreamerDeps) {
+  const timer = setInterval(() => {
+    void runDreamer(dreamerDeps);
+  }, 24 * 60 * 60 * 1000);
+  timer.unref();
+}
+
 // Single deps object shared by the POST /message handler and the routine
 // scheduler, so wiring a new capability never needs updating in two places.
 const orchestratorDeps = {
@@ -208,7 +258,9 @@ console.log(
     `embed=${process.env.GOOGLE_AI_API_KEY ? "google" : "local"} ` +
     `routines=${process.env.ROUTINES_FILE ? "on" : "off"} ` +
     `whatsapp=${whatsapp ? "on" : "off"} ` +
-    `approvals=${approvals ? "on" : "off"}`,
+    `approvals=${approvals ? "on" : "off"} ` +
+    `dreams=${dreams ? "on" : "off"} ` +
+    `budget=${budget ? "on" : "off"}`,
 );
 
 function send(res: ServerResponse, status: number, body: unknown): void {
@@ -321,6 +373,37 @@ const server = createServer(async (req, res) => {
         });
         return send(res, 200, { row: failed });
       }
+    }
+
+    // Dream journal — only mounted when DREAMS_FILE is wired (else 404,
+    // deny-by-default). GET lists (optionally filtered by ?status=new);
+    // POST /dreams/:id decides one with { "status": "accepted" | "dismissed" };
+    // POST /dreams/run manually triggers a dreaming pass (needs memory too, so
+    // it 404s unless dreamerDeps is live even when the journal itself is on).
+    if (dreams && req.method === "GET" && url.pathname === "/dreams") {
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const rows = await dreams.recent(Number.isFinite(limit) ? limit : 50);
+      const status = url.searchParams.get("status");
+      return send(res, 200, { rows: status ? rows.filter((r) => r.status === status) : rows });
+    }
+
+    // Checked ahead of the generic /dreams/:id handler below so "run" is never
+    // mistaken for an id (deny-by-default 404 when memory isn't wired too).
+    if (req.method === "POST" && url.pathname === "/dreams/run") {
+      if (!dreamerDeps) return send(res, 404, { error: "not found" });
+      const entries = await runDreamer(dreamerDeps);
+      return send(res, 200, { dreamed: entries.length, rows: entries });
+    }
+
+    if (dreams && req.method === "POST" && url.pathname.startsWith("/dreams/")) {
+      const id = decodeURIComponent(url.pathname.slice("/dreams/".length));
+      const { status } = JSON.parse((await readBody(req)) || "{}") as { status?: DreamStatus };
+      if (status !== "accepted" && status !== "dismissed") {
+        return send(res, 400, { error: "body must include status 'accepted' or 'dismissed'" });
+      }
+      const updated = await dreams.setStatus(id, status);
+      if (!updated) return send(res, 404, { error: "no dream with that id" });
+      return send(res, 200, { row: updated });
     }
 
     // WhatsApp webhook — only mounted when creds are wired (else falls through

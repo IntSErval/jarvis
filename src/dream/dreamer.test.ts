@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { runDreamer, type DreamerDeps } from "./dreamer.js";
 import type { DreamEntry, DreamStore } from "./dream.js";
-import type { ModelClient, Message } from "../orchestrator.js";
+import type { ModelClient, Message, ModelTurn } from "../orchestrator.js";
 import type { MemoryStore, ScannedMemory } from "../memory/store.js";
 import type { AuditInput } from "../db/audit.js";
+import { costUsd, type BudgetGuard, type SpendRecord } from "../budget/budget.js";
 
 function scriptedModel(texts: string[]): { model: ModelClient; calls: Message[][] } {
   const calls: Message[][] = [];
@@ -16,6 +17,19 @@ function scriptedModel(texts: string[]): { model: ModelClient; calls: Message[][
         return { toolCalls: [], text: texts[i++] ?? "" };
       },
     },
+  };
+}
+
+function meteredModel(texts: string[], usage: NonNullable<ModelTurn["usage"]>): ModelClient {
+  let i = 0;
+  return { turn: async () => ({ toolCalls: [], text: texts[i++] ?? "", usage }) };
+}
+
+function recordingBudget(allow = true): { budget: BudgetGuard; records: SpendRecord[] } {
+  const records: SpendRecord[] = [];
+  return {
+    records,
+    budget: { check: async () => ({ allow }), record: async (r) => void records.push(r) },
   };
 }
 
@@ -125,6 +139,21 @@ describe("runDreamer", () => {
     expect(scripted.calls.length).toBe(0);
     expect(dreams.inserted).toHaveLength(0);
     expect(audits.some((a) => /budget/i.test(a.response) || /budget/i.test(a.error ?? ""))).toBe(true);
+  });
+
+  it("records spend (cost of each model call) into the budget when turns carry usage", async () => {
+    const usage = { model: "claude-sonnet-5", inputTokens: 1000, outputTokens: 500 };
+    const { budget, records } = recordingBudget();
+    await runDreamer(baseDeps({ model: meteredModel(["p1", "p2", candidates(1)], usage), proposals: 2, budget }));
+    expect(records).toHaveLength(3); // 2 proposals + 1 judge
+    const expected = costUsd(usage.model, usage.inputTokens, usage.outputTokens);
+    expect(records.every((r) => r.usd === expected && r.model === usage.model)).toBe(true);
+  });
+
+  it("records nothing when turns carry no usage (preserves the $0 stub path)", async () => {
+    const { budget, records } = recordingBudget();
+    await runDreamer(baseDeps({ model: scriptedModel(["p1", "p2", "p3", candidates(1)]).model, budget }));
+    expect(records).toHaveLength(0);
   });
 
   it("degrades gracefully (returns [], no throw, audits error) when the judge output is unparseable", async () => {

@@ -43,6 +43,12 @@ describe("anthropicModel", () => {
     expect(turn.toolCalls).toEqual([{ id: "toolu_1", name: "list_events", args: { day: "tomorrow" } }]);
   });
 
+  it("parses token usage into ModelTurn.usage (tagged with the call's model)", async () => {
+    const fetchFn = reply({ content: [{ type: "text", text: "hi" }], usage: { input_tokens: 12, output_tokens: 7 } });
+    const turn = await anthropicModel("sk-test", { fetchFn, model: "claude-opus-4-8" }).turn(userMsg, CALENDAR_TOOLS);
+    expect(turn.usage).toEqual({ model: "claude-opus-4-8", inputTokens: 12, outputTokens: 7 });
+  });
+
   it("throws when the API returns a non-2xx status", async () => {
     const fetchFn = vi.fn(async () => new Response("bad", { status: 400 }));
     await expect(anthropicModel("sk-test", { fetchFn }).turn(userMsg, CALENDAR_TOOLS)).rejects.toThrow(

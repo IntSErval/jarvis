@@ -55,7 +55,10 @@ export function anthropicModel(apiKey: string, opts: Opts = {}): ModelClient {
       });
       if (!res.ok) throw new Error(`anthropic request failed: ${res.status} ${await res.text()}`);
 
-      const body = (await res.json()) as { content?: ContentBlock[] };
+      const body = (await res.json()) as {
+        content?: ContentBlock[];
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
       const blocks = body.content ?? [];
       const text = blocks
         .filter((b) => b.type === "text")
@@ -64,7 +67,12 @@ export function anthropicModel(apiKey: string, opts: Opts = {}): ModelClient {
       const toolCalls: ModelToolCall[] = blocks
         .filter((b) => b.type === "tool_use")
         .map((b) => ({ id: b.id ?? "", name: b.name ?? "", args: b.input }));
-      return { toolCalls, text };
+      // Only tag usage when the API actually reported it, so unmetered paths keep
+      // a usage-free turn (budget records nothing for them).
+      const usage = body.usage
+        ? { model, inputTokens: body.usage.input_tokens ?? 0, outputTokens: body.usage.output_tokens ?? 0 }
+        : undefined;
+      return { toolCalls, text, ...(usage ? { usage } : {}) };
     },
   };
 }

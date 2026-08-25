@@ -31,6 +31,10 @@ export interface ModelTurn {
   /** Empty => the model is done and `text` is the final answer. */
   toolCalls: ModelToolCall[];
   text: string;
+  /** Token usage for this call, when the adapter reports it (real model does;
+   *  stubs don't). Carries the model id so cost metering has everything it needs.
+   *  Absent => not metered (e.g. the $0 stub) — treated as free by budget record. */
+  usage?: { model: string; inputTokens: number; outputTokens: number };
 }
 
 export interface ToolSpec {

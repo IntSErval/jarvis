@@ -165,12 +165,13 @@ const approvalWriters: Record<string, ApprovalWriter> = {
 // pattern as elsewhere. Absent BUDGET_FILE => no guard, autonomous runs
 // unbounded (deny-by-default doesn't apply here — this is a spend cap, not a
 // capability gate).
-// ponytail: nothing calls budget.record() yet — ModelTurn carries no token
-// usage, so real spend metering needs orchestrator surgery (out of scope for
-// this task). The guard's check() only reads past spend from the store; until
-// a future task wires record() to actual model calls, the daily/monthly caps
-// never accumulate and check() always allows. Don't mistake this for live
-// enforcement.
+// The dreamer meters each model call's spend into this guard (runDreamer ->
+// budget.record via ModelTurn.usage), so daily/monthly caps accumulate across
+// nightly runs and check() denies once a cap is reached. Only the real
+// anthropic adapter reports usage; the $0 stub records nothing.
+// ponytail: only the autonomous dream loop is metered — the interactive
+// /message loop isn't, since caps are a guard on unattended spend (PRD 8), not
+// on human-in-the-loop turns. Meter the orchestrator too if that changes.
 const dailyUsd = process.env.BUDGET_DAILY_USD ? parseFloat(process.env.BUDGET_DAILY_USD) : undefined;
 const monthlyUsd = process.env.BUDGET_MONTHLY_USD ? parseFloat(process.env.BUDGET_MONTHLY_USD) : undefined;
 const budgetCaps: BudgetCaps = {

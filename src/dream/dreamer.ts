@@ -7,10 +7,10 @@
 // Reuses the injected ModelClient port (empty tool list => plain generation) and
 // the audit logger, exactly like the orchestrator loop. Not loop surgery.
 
-import type { ModelClient, Message } from "../orchestrator.js";
+import type { ModelClient, Message, ModelTurn } from "../orchestrator.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { AuditInput } from "../db/audit.js";
-import type { BudgetGuard } from "../budget/budget.js";
+import { costUsd, type BudgetGuard } from "../budget/budget.js";
 import { buildDreamEntry, type DreamEntry, type DreamInput, type DreamStore, type DreamCategory } from "./dream.js";
 import { sampleSeeds } from "./sample.js";
 
@@ -99,13 +99,31 @@ export async function runDreamer(deps: DreamerDeps): Promise<DreamEntry[]> {
     }
     const seedTexts = chosen.map((m) => m.content);
 
+    // Meter each model call so the daily/monthly caps actually accumulate (PRD 8).
+    // Best-effort: a store hiccup must never break the dream run. A usage-free
+    // turn (the $0 stub) records nothing.
+    // ponytail: records after the call, so a single night isn't stopped mid-flight
+    // — the cap bites at the *next* run's check(). Fine for a daily cap; add a
+    // check() between calls if per-run overrun ever matters.
+    const meter = async (turn: ModelTurn): Promise<void> => {
+      if (!budget || !turn.usage) return;
+      try {
+        const usd = costUsd(turn.usage.model, turn.usage.inputTokens, turn.usage.outputTokens);
+        await budget.record({ ts: (now?.() ?? new Date()).toISOString(), usd, model: turn.usage.model });
+      } catch {
+        // best-effort — ignore
+      }
+    };
+
     // Fan out N independent proposals, then one judge/synthesis pass.
     const proposalTexts: string[] = [];
     for (let i = 0; i < proposals; i++) {
       const turn = await model.turn([proposalPrompt(seedTexts)], []);
+      await meter(turn);
       proposalTexts.push(turn.text);
     }
     const judged = await model.turn([judgePrompt(proposalTexts)], []);
+    await meter(judged);
 
     const inputs = parseCandidates(judged.text).slice(0, maxPerNight);
     const entries = inputs.map((input) => buildDreamEntry(input, now, id));
